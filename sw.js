@@ -3,7 +3,7 @@
  * Data (Apps Script POST): never cached by SW (app manages its own cache).
  * Images (Drive thumbs) & fonts: cache-first with background refresh.
  */
-const CACHE = 'chowhuay-v1';
+const CACHE = 'chowhuay-v2';
 const CORE = [
   './',
   './index.html',

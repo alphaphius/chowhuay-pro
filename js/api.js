@@ -27,7 +27,7 @@
     const sep = url.indexOf('?') >= 0 ? '&' : '?';
     let res;
     try {
-      res = await fetch(url + sep + 'action=' + encodeURIComponent(action), {
+      res = await fetch(url + sep + 'action=' + encodeURIComponent(action) + '&_=' + Date.now(), {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify(body || {})

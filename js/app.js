@@ -128,7 +128,7 @@
   function bindPasscode() {
     const dots = document.querySelectorAll('.pin-dot');
     window.enterPin = function (n) {
-      if (pin.length >= MAX_PIN || !unlocked) return;
+      if (pin.length >= MAX_PIN) return;
       pin += n;
       updateDots(dots);
       if (pin.length === MAX_PIN) {
