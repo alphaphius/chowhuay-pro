@@ -1,0 +1,199 @@
+/* ChowHuay Pro — App boot: passcode, router, nav, sync, PWA */
+(function (global) {
+  'use strict';
+
+  let unlocked = false;
+  let pin = '';
+  const MAX_PIN = 4;
+
+  const App = {
+    route: 'dashboard',
+
+    init() {
+      Store.loadCache();
+      applySavedTheme();
+      Store.state.settings = Store.state.settings || {};
+
+      if (Api.isConfigured() && !Store.state.syncedAt) {
+        refreshSilent();
+      }
+
+      bindNav();
+      bindPasscode();
+      bindTopbar();
+      bindGlobal();
+
+      // PWA
+      window.addEventListener('beforeinstallprompt', (e) => ViewSettings.captureInstall(e));
+      registerSW();
+
+      document.addEventListener('app:restock', (e) => {
+        const prod = e.detail;
+        location.hash = '#/inventory';
+        setTimeout(() => ViewInventory.openRestock(prod), 60);
+      });
+    },
+
+    unlock(pinOk) {
+      unlocked = true;
+      document.getElementById('passcode-overlay').classList.add('hidden');
+      document.getElementById('app-shell').classList.remove('hidden');
+      route();
+    },
+
+    renderView() {
+      if (!unlocked) return;
+      const containers = {
+        dashboard: document.getElementById('view-dashboard'),
+        pos: document.getElementById('view-pos'),
+        inventory: document.getElementById('view-inventory'),
+        reports: document.getElementById('view-reports'),
+        settings: document.getElementById('view-settings')
+      };
+      const c = containers[this.route] || containers.dashboard;
+      Object.keys(containers).forEach((k) => containers[k].classList.remove('active'));
+      c.classList.add('active');
+      try {
+        if (this.route === 'dashboard') ViewDashboard.render(c);
+        else if (this.route === 'pos') ViewPos.render(c);
+        else if (this.route === 'inventory') ViewInventory.render(c);
+        else if (this.route === 'reports') ViewReports.render(c);
+        else if (this.route === 'settings') ViewSettings.render(c);
+      } catch (err) {
+        c.innerHTML = '<div class="empty-state"><span class="material-symbols-outlined">error</span><p class="body">เกิดข้อผิดพลาด: ' + U.esc(err.message || err) + '</p></div>';
+      }
+      if (!Api.isConfigured() && !Store.state.syncedAt && this.route !== 'settings') {
+        UI.toast('ยังไม่ได้เชื่อมต่อฐานข้อมูล — ไปที่การตั้งค่าเพื่อตั้งค่า Apps Script', 'error');
+      }
+    },
+
+    refresh() {
+      return refreshSilent();
+    }
+  };
+
+  function applySavedTheme() {
+    let t = { theme: 'blue', mode: 'light' };
+    try { t = Object.assign(t, JSON.parse(localStorage.getItem(CONFIG.THEME_KEY) || '{}')); } catch (e) {}
+    const root = document.documentElement;
+    root.dataset.theme = t.theme;
+    root.dataset.mode = t.mode;
+  }
+
+  function refreshSilent() {
+    return Api.isConfigured()
+      ? Store.refresh().then(() => { ViewSettings.updateInstallButton(); }).catch((err) => { console.warn('sync fail', err); })
+      : Promise.resolve();
+  }
+
+  function route() {
+    const h = (location.hash || '#/dashboard').replace(/^#\/?/, '');
+    App.route = CONFIG.ROUTES.includes(h) ? h : 'dashboard';
+    document.querySelectorAll('[data-route]').forEach((el) => {
+      const on = el.dataset.route === App.route;
+      el.classList.toggle('active', on);
+    });
+    App.renderView();
+    window.scrollTo(0, 0);
+  }
+
+  function bindNav() {
+    document.addEventListener('click', (e) => {
+      const nav = e.target.closest('[data-route]');
+      if (nav) {
+        location.hash = '#/' + nav.dataset.route;
+      }
+    });
+    window.addEventListener('hashchange', route);
+  }
+
+  function bindTopbar() {
+    const syncBtn = document.getElementById('topbar-sync');
+    if (syncBtn) syncBtn.addEventListener('click', async () => {
+      syncBtn.style.transform = 'rotate(360deg)';
+      syncBtn.style.transition = 'transform 0.4s';
+      if (Api.isConfigured()) {
+        await refreshSilent();
+        UI.toast('ซิงก์ข้อมูลล่าสุดแล้ว');
+      } else {
+        UI.toast('ยังไม่ได้ตั้งค่า Apps Script URL', 'error');
+        location.hash = '#/settings';
+      }
+      setTimeout(() => { syncBtn.style.transform = ''; syncBtn.style.transition = ''; }, 450);
+      App.renderView();
+    });
+  }
+
+  // ---- passcode ----
+  function bindPasscode() {
+    const dots = document.querySelectorAll('.pin-dot');
+    window.enterPin = function (n) {
+      if (pin.length >= MAX_PIN || !unlocked) return;
+      pin += n;
+      updateDots(dots);
+      if (pin.length === MAX_PIN) {
+        setTimeout(() => verifyPin(dots), 120);
+      }
+    };
+    window.deletePin = function () {
+      pin = pin.slice(0, -1);
+      updateDots(dots);
+    };
+
+    // quick test via enter key on hidden input (desktop convenience)
+    const quick = document.getElementById('pin-quick');
+    if (quick) quick.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        const v = quick.value.trim();
+        if (/^\d{4}$/.test(v)) {
+          pin = v;
+          updateDots(dots);
+          verifyPin(dots);
+          quick.value = '';
+        }
+      }
+    });
+  }
+
+  function updateDots(dots) {
+    dots.forEach((d, i) => {
+      d.className = 'pin-dot' + (i < pin.length ? ' filled' : '');
+    });
+  }
+
+  function verifyPin(dots) {
+    const expected = (Store.state.settings && Store.state.settings.passcode) || Api.localPasscode();
+    if (pin === String(expected)) {
+      dots.forEach((d) => d.classList.add('success'));
+      setTimeout(() => {
+        pin = '';
+        updateDots(dots);
+        App.unlock(true);
+      }, 250);
+    } else {
+      dots.forEach((d) => d.classList.add('error'));
+      const wrap = document.querySelector('.pin-dots');
+      if (wrap) wrap.animate([{ transform: 'translateX(0)' }, { transform: 'translateX(-10px)' }, { transform: 'translateX(10px)' }, { transform: 'translateX(-8px)' }, { transform: 'translateX(8px)' }, { transform: 'translateX(0)' }], { duration: 350 });
+      setTimeout(() => {
+        pin = '';
+        updateDots(dots);
+        UI.toast('รหัสผ่านไม่ถูกต้อง', 'error');
+      }, 450);
+    }
+  }
+
+  function bindGlobal() {
+    // Enter key on PIN quick input focuses
+    document.addEventListener('keydown', () => {});
+    // Prevent double-tap zoom on mobile
+    document.addEventListener('dblclick', (e) => e.preventDefault());
+  }
+
+  function registerSW() {
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js').catch((err) => console.warn('SW fail', err));
+    }
+  }
+
+  global.App = App;
+})(window);
