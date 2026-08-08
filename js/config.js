@@ -3,7 +3,7 @@ window.CONFIG = {
   APP_VERSION: '1.0.0',
   // ตั้งค่า URL ของ Google Apps Script Web App (จบด้วย /exec)
   // ตัวอย่าง: 'https://script.google.com/macros/s/AKfycb.../exec'
-  GAS_URL: '',
+  GAS_URL: 'https://script.google.com/macros/s/AKfycbzWEahwMPfSI4tzCFbeNrREVCGxPHslHCu7yF7lP-eX1Ushzf5E730N-kNc-rWLWxA8zQ/exec',
   // Script ID ของ Apps Script (ใช้สำหรับแนะนำ/ระบุโปรเจกต์เท่านั้น ไม่ใช่ URL)
   GAS_SCRIPT_ID: '1gJIXsjL0q8z2bbNxIpeUXI2Z9pECLUlGzZSemZtzeZMzc2gglJnQ-6n7',
   // ขนาดรูป thumbnail ที่โหลดจาก Google Drive (w320 = เบา/เร็ว)
