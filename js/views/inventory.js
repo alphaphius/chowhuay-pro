@@ -92,8 +92,8 @@
                 <div style="text-align:right;">
                   <div class="price-sm">${U.fmtMoney(p.total)}</div>
                   <div class="flex gap-sm" style="justify-content:flex-end;">
-                    <button class="btn-icon" style="width:32px;height:32px;" data-bedit="${U.esc(p.id)}">${UI.icon('edit')}</button>
-                    <button class="btn-icon" style="width:32px;height:32px;" data-bdel="${U.esc(p.id)}">${UI.icon('delete', 'text-error')}</button>
+                    <button class="btn-icon" data-bedit="${U.esc(p.id)}">${UI.icon('edit')}</button>
+                    <button class="btn-icon" data-bdel="${U.esc(p.id)}">${UI.icon('delete', 'text-error')}</button>
                   </div>
                 </div>
               </div>`).join('')
@@ -121,7 +121,7 @@
           </div>
         </div>
         <div style="display:flex;align-items:center;gap:6px;">
-          <div class="stepper" style="height:32px;">
+          <div class="stepper">
             <button data-adj="-1" data-id="${U.esc(p.id)}">${UI.icon('remove')}</button>
             <span style="min-width:36px;color:${low ? 'var(--error)' : 'inherit'};font-weight:700;">${U.fmtInt(stock)}</span>
             <button data-adj="1" data-id="${U.esc(p.id)}">${UI.icon('add')}</button>
@@ -129,8 +129,8 @@
         </div>
         <div class="caption" style="text-align:right;min-width:70px;">ต้นทุน <b class="text-primary">${U.fmtMoney(p.cost)}</b><br>ขาย <b>${U.fmtMoney(p.sell)}</b></div>
         <div style="display:flex;gap:4px;">
-          <button class="btn-icon" style="width:36px;height:36px;" data-edit="${U.esc(p.id)}">${UI.icon('edit')}</button>
-          <button class="btn-icon" style="width:36px;height:36px;" data-del="${U.esc(p.id)}">${UI.icon('delete', 'text-error')}</button>
+          <button class="btn-icon" data-edit="${U.esc(p.id)}">${UI.icon('edit')}</button>
+          <button class="btn-icon" data-del="${U.esc(p.id)}">${UI.icon('delete', 'text-error')}</button>
         </div>
       </div>`;
   }

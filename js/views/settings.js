@@ -27,7 +27,7 @@
         <div class="card-body">
           <h3 class="h3 mb">เชื่อมต่อ Google Apps Script (ฐานข้อมูล)</h3>
           ${configured
-            ? `<div class="mb-sm" style="display:flex;align-items:center;gap:8px;">${UI.badge('success', 'เชื่อมต่อแล้ว')}<span class="caption">${U.esc(Api.gasUrl())}</span></div>`
+            ? `<div class="mb-sm" style="display:flex;align-items:center;gap:8px;">${UI.badge('success', 'เชื่อมต่อแล้ว')}<span class="caption" style="word-break:break-all;min-width:0;">${U.esc(Api.gasUrl())}</span></div>`
             : `<div class="mb-sm">${UI.badge('warning', 'ยังไม่ได้ตั้งค่า')}</div>`}
           <div class="field">
             <label>URL ของ Web App (/exec)</label>

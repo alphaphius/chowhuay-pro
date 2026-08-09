@@ -131,10 +131,10 @@
 
   function txRow(t) {
     const detailBtn = t.kind === 'sale'
-      ? `<button class="btn-icon" style="width:32px;height:32px;" data-sview="${U.esc(t.sale.id)}">${UI.icon('visibility')}</button>
-         <button class="btn-icon" style="width:32px;height:32px;" data-sdel="${U.esc(t.sale.id)}">${UI.icon('delete', 'text-error')}</button>`
-      : `<button class="btn-icon" style="width:32px;height:32px;" data-pedit="${U.esc(t.id)}">${UI.icon('edit')}</button>
-         <button class="btn-icon" style="width:32px;height:32px;" data-pdel="${U.esc(t.id)}">${UI.icon('delete', 'text-error')}</button>`;
+      ? `<button class="btn-icon" data-sview="${U.esc(t.sale.id)}">${UI.icon('visibility')}</button>
+         <button class="btn-icon" data-sdel="${U.esc(t.sale.id)}">${UI.icon('delete', 'text-error')}</button>`
+      : `<button class="btn-icon" data-pedit="${U.esc(t.id)}">${UI.icon('edit')}</button>
+         <button class="btn-icon" data-pdel="${U.esc(t.id)}">${UI.icon('delete', 'text-error')}</button>`;
     return `
       <tr>
         <td style="white-space:nowrap;">${U.fmtDate(t.date)}<br><span class="caption">${U.fmtTime(t.date)}</span></td>

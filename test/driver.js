@@ -176,7 +176,8 @@
     const payCash = document.querySelector('input[name="co-pay"][value="cash"]');
     if (payCash) payCash.click();
     document.querySelector('.modal-sheet .modal-foot .btn').click();
-    await until(() => window.Store.state.sales.length >= 1, 30000);
+    const salesBefore = window.Store.state.sales.length;
+    await until(() => window.Store.state.sales.length > salesBefore, 30000);
     const sale = window.Store.state.sales[window.Store.state.sales.length - 1];
     ok('sale created: code=' + sale.code + ' discount=' + sale.discount + ' total=' + sale.total + ' cash=' + sale.cashReceived + ' change=' + sale.change);
     const sOk = sale.discount === 5 && sale.total === 20 && sale.cashReceived === 50 && sale.change === 30;

@@ -24,7 +24,7 @@
             <div class="search-bar grow">
               ${UI.icon('search')}
               <input id="pos-search" type="text" placeholder="ค้นหาสินค้า..." value="${U.esc(filterQ)}">
-              <button id="pos-clear-q" class="btn-icon" style="width:32px;height:32px;" data-qclear>${UI.icon('close')}</button>
+              <button id="pos-clear-q" class="btn-icon" data-qclear>${UI.icon('close')}</button>
             </div>
             <button id="pos-scan" class="btn btn-primary" style="width:48px;height:48px;border-radius:12px;padding:0;">${UI.icon('barcode_scanner')}</button>
           </div>

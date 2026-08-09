@@ -8,6 +8,6 @@
     "test": "node test/run.mjs --scenario=full",
     "test:smoke": "node test/run.mjs --scenario=smoke",
     "test:cleanup": "node test/cleanup.mjs",
-    "verify": "node test/run.mjs --scenario=full && node test/run.mjs --scenario=smoke && node test/cleanup.mjs"
+    "verify": "node test/run.mjs --scenario=full; r1=$?; node test/run.mjs --scenario=smoke; r2=$?; node test/cleanup.mjs; c=$?; [ $r1 -ne 0 ] && exit $r1; [ $r2 -ne 0 ] && exit $r2; exit $c"
   }
 }
