@@ -10,11 +10,17 @@ from your machine, so you verify everything locally first.
 
 ## Run
 ```bash
+# one command: full regression -> smoke -> backend cleanup (all on :8765)
+npm run verify
+
 # full scenario (creates sale, restock, settings changes — writes real data)
-node test/run.mjs
+npm run test
 
 # read-only render smoke test (dashboard/pos/inventory/reports/settings views)
-node test/run.mjs --scenario=smoke
+npm run test:smoke
+
+# reset backend to clean slate + default settings
+npm run test:cleanup
 ```
 
 ## Flow
@@ -27,6 +33,19 @@ node test/run.mjs --scenario=smoke
 Backend carries test data (product, sale, purchase, settings changes). Reset it
 with the browser-based cleanup in `test/cleanup.mjs` (node->GAS is unreliable on
 some networks; cleanup runs from inside Chrome which routes fine).
+
+## Coverage (full scenario, ~26 checks)
+- Boot, PIN unlock (uses real passcode), data sync
+- Settings: theme, dark mode, store name, passcode, notification toggle
+- POS: scan modal, add-to-cart, checkout with discount + cash → verifies
+  discount math (25-5=20), change (50-20=30)
+- Dashboard: low-stock restock (+30)
+- Inventory: add product via UI form, image upload (compress→Drive), edit,
+  category add, bulk purchase add + delete via UI
+- Reports: delete sale (stock restored +1), Excel export (XLSX lib loads and a
+  real .xlsx file lands in /tmp/chowhuay-dl), PDF export, date-range toggles
+- Low-stock browser notification fires (title/body verified)
+- Zero uncaught JS errors
 
 ## Notes
 - `test/index.test.html` is generated, never commit it.

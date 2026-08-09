@@ -9,8 +9,8 @@
 // Prereq: a static server on PORT serving the project root. Example:
 //   python3 -m http.server 8765
 
-import { spawn } from 'node:child_process';
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { spawn, spawnSync } from 'node:child_process';
+import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -22,6 +22,9 @@ const scenario = (args.find((a) => a.startsWith('--scenario=')) || '--scenario=f
 const PORT = 8765;
 const CDP = 'http://127.0.0.1:9222';
 const URL = `http://localhost:${PORT}/index.test.html`;
+const DL = '/tmp/chowhuay-dl';
+rmSync(DL, { recursive: true, force: true });
+mkdirSync(DL, { recursive: true });
 
 // --- 1. generate test page ---------------------------------------------------
 const driver = readFileSync(join(__dirname, 'driver.js'), 'utf8');
@@ -45,24 +48,27 @@ if (!(await reach(`http://localhost:${PORT}/index.html`))) {
   console.error('      python3 -m http.server 8765');
   process.exit(1);
 }
-if (!(await reach(CDP + '/json'))) {
-  const chrome = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
-  const profile = `/tmp/chowhuay-test-${Date.now()}`;
-  spawn(chrome, ['--headless=new', '--disable-gpu', '--no-sandbox', '--remote-debugging-port=9222', `--user-data-dir=${profile}`], {
-    stdio: 'ignore',
-    detached: true
-  }).unref();
-  let up = false;
-  for (let i = 0; i < 20 && !up; i++) {
-    await new Promise((r) => setTimeout(r, 500));
-    up = await reach(CDP + '/json');
-  }
-  if (!up) {
-    console.error('[2/4] could not start Chrome with remote debugging');
-    process.exit(1);
-  }
+
+// Always run against a FRESH Chrome profile so localStorage/PIN state from a
+// previous run can't leak into this one (caused stale-cache flakiness).
+const chrome = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+const profile = `/tmp/chowhuay-test-${Date.now()}`;
+spawnSync('pkill', ['-f', 'remote-debugging-port=9222']);
+await new Promise((r) => setTimeout(r, 800));
+spawn(chrome, ['--headless=new', '--disable-gpu', '--no-sandbox', '--remote-debugging-port=9222', `--user-data-dir=${profile}`], {
+  stdio: 'ignore',
+  detached: true
+}).unref();
+let up = false;
+for (let i = 0; i < 20 && !up; i++) {
+  await new Promise((r) => setTimeout(r, 500));
+  up = await reach(CDP + '/json');
 }
-console.log('[2/4] server + chrome ready');
+if (!up) {
+  console.error('[2/4] could not start Chrome with remote debugging');
+  process.exit(1);
+}
+console.log('[2/4] server + fresh chrome ready');
 
 // --- 3. drive the page --------------------------------------------------------
 function cdpConnect(url) {
@@ -106,8 +112,9 @@ if (!page) {
 }
 const cdp = await cdpConnect(page.webSocketDebuggerUrl);
 await cdp.send('Runtime.enable');
-await cdp.send('Browser.grantPermissions', { origin: URL, permissions: ['notifications'] });
 await cdp.send('Page.enable');
+await cdp.send('Browser.setDownloadBehavior', { behavior: 'allow', downloadPath: DL, eventsEnabled: true });
+await cdp.send('Browser.grantPermissions', { origin: URL, permissions: ['notifications'] });
 await cdp.send('Page.navigate', { url: URL });
 console.log('[3/4] navigated, waiting for __DONE title...');
 
@@ -115,7 +122,7 @@ let done = false;
 let title = '';
 let logStr = '';
 let pollErr = '';
-for (let i = 0; i < 90 && !done; i++) {
+for (let i = 0; i < 300 && !done; i++) {
   await new Promise((r) => setTimeout(r, 1000));
   try {
     title = await evalIn(cdp, page, 'document.title');
@@ -132,14 +139,24 @@ if (!done) {
   try {
     logStr = (await evalIn(cdp, page, 'JSON.stringify(window.__log || [])')) || '';
   } catch {}
-  console.error(`[4/4] TIMEOUT after 90s (${pollErr}). Partial: ${logStr}`);
+  console.error(`[4/4] TIMEOUT after 300s (${pollErr}). Partial: ${logStr}`);
   cdp.close();
   process.exit(1);
 }
 cdp.close();
 
 // --- 4. report ----------------------------------------------------------------
-console.log('[4/4] RESULT: ' + logStr.replace(/ \| /g, '\n       '));
+let dlNote = '';
+try {
+  const files = readdirSync(DL);
+  const xlsx = files.filter((f) => f.endsWith('.xlsx'));
+  dlNote = xlsx.length
+    ? `\n       [download] Excel file saved: ${xlsx.map((f) => f + ' (' + statSync(join(DL, f)).size + 'B)').join(', ')}`
+    : '\n       [download] WARN: no .xlsx file in download dir';
+} catch {
+  dlNote = '\n       [download] WARN: download dir missing';
+}
+console.log('[4/4] RESULT: ' + logStr.replace(/ \| /g, '\n       ') + dlNote);
 const fails = (logStr.match(/FAIL/g) || []).length;
 const oks = (logStr.match(/OK/g) || []).length;
 console.log(`       ${oks} OK / ${fails} FAIL / ${oks + fails} total`);

@@ -1,0 +1,13 @@
+{
+  "name": "chowhuay-pro",
+  "version": "1.0.0",
+  "private": true,
+  "description": "ChowHuay Pro — ร้านโชว์ห่วย สต็อกและขาย (Sheets/Drive backend, GitHub Pages PWA)",
+  "scripts": {
+    "serve": "python3 -m http.server 8765",
+    "test": "node test/run.mjs --scenario=full",
+    "test:smoke": "node test/run.mjs --scenario=smoke",
+    "test:cleanup": "node test/cleanup.mjs",
+    "verify": "node test/run.mjs --scenario=full && node test/run.mjs --scenario=smoke && node test/cleanup.mjs"
+  }
+}

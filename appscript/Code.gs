@@ -193,9 +193,20 @@ function buildProductRow(p) {
   ];
 }
 
+function assertUniqueBarcode(sh, barcode, excludeId) {
+  if (isBlank(barcode)) return;
+  var values = sh.getDataRange().getValues();
+  var want = String(barcode).trim();
+  for (var r = 1; r < values.length; r++) {
+    if (String(values[r][0]) === String(excludeId || '')) continue;
+    if (String(values[r][1]).trim() === want) throw new Error('มีสินค้าบาร์โค้ด "' + want + '" ในระบบแล้ว');
+  }
+}
+
 function createProduct(p) {
   if (isBlank(p.name)) throw new Error('ต้องระบุชื่อสินค้า');
   var sh = sheet(SHEET_PRODUCTS, PRODUCT_HEADERS);
+  assertUniqueBarcode(sh, p.barcode, null);
   var id = p.id || uid('p');
   p.id = id;
   p.created = p.created || nowIso();
@@ -208,6 +219,7 @@ function updateProduct(p) {
   var sh = sheet(SHEET_PRODUCTS, PRODUCT_HEADERS);
   var row = findRowById(sh, p.id);
   if (row < 0) throw new Error('ไม่พบสินค้า #' + p.id);
+  assertUniqueBarcode(sh, p.barcode, p.id);
   var existing = tableToObjects(sh).find(function (o) { return String(o.id) === String(p.id); });
   var merged = {};
   PRODUCT_HEADERS.forEach(function (h) { merged[h] = (p[h] !== undefined) ? p[h] : (existing ? existing[h] : ''); });

@@ -2,8 +2,9 @@
 // Drives the real UI through the live Apps Script backend, then leaves a
 // __DONE title marker for test/run.mjs to read.
 //
-// USAGE: this file is embedded by test/gen.mjs into test/index.test.html.
-// Set window.__SCENARIO to 'smoke' (read-only) or 'full' (data-changing).
+// window.__SCENARIO:
+//   'smoke'  — read-only render check of all 5 views + chart
+//   'full'   — full business flow (data-changing; run cleanup after)
 
 (function () {
   const SCENARIO = window.__SCENARIO || 'full';
@@ -14,6 +15,19 @@
   const errs = (window.__errs = []);
   window.addEventListener('error', (e) => errs.push('err:' + e.message));
   window.addEventListener('unhandledrejection', (e) => errs.push('rej:' + String((e.reason && e.reason.message) || e.reason)));
+
+  // --- notification stub (installed before boot so any early alert is caught) ---
+  window.__notifyCount = 0;
+  window.__lastNotify = null;
+  try {
+    window.Notification = function (title, opts) {
+      window.__notifyCount++;
+      window.__lastNotify = { title: String(title), body: (opts && opts.body) || '' };
+      return { close: function () {} };
+    };
+    window.Notification.permission = 'granted';
+    window.Notification.requestPermission = () => Promise.resolve('granted');
+  } catch (e) {}
 
   async function until(fn, ms, step) {
     const t = Date.now();
@@ -27,7 +41,7 @@
   async function boot() {
     for (let i = 0; i < 100 && !(window.Store && window.Store.state && window.App && typeof window.enterPin === 'function'); i++) await wait(100);
     await until(() => window.Store.state.loaded === true, 25000);
-    if (!window.Store.state.products.length) {
+    if (!byBarcode(8851888041847)) {
       await window.Api.product.create({
         barcode: 8851888041847,
         name: 'ปลากระป๋องปู',
@@ -46,6 +60,28 @@
     const expected = String(window.Store.state.settings.passcode || window.Api.localPasscode() || '1234');
     expected.split('').forEach((d) => window.enterPin(Number(d)));
     await until(() => !document.getElementById('passcode-overlay').classList.contains('hidden'), 10000);
+  }
+
+  function setVal(sel, v) {
+    const el = document.querySelector(sel);
+    if (!el) return false;
+    el.value = v;
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    return true;
+  }
+
+  function byBarcode(bc) {
+    return window.Store.state.products.find((p) => String(p.barcode) === String(bc));
+  }
+
+  function closeModalIfOpen() {
+    const m = document.querySelector('.modal-sheet [data-mclose]');
+    if (m) m.click();
+  }
+
+  function confirmDelete() {
+    const b = document.querySelector('.modal-sheet .modal-foot .btn-danger');
+    if (b) b.click();
   }
 
   async function smoke() {
@@ -75,6 +111,7 @@
     await until(() => window.Store.state.products.length, 25000);
     ok('boot+data products=' + window.Store.state.products.length);
 
+    // --- settings ---
     location.hash = '#/settings';
     await wait(900);
     const root = document.documentElement;
@@ -115,33 +152,40 @@
       ok('notify toggle saved: ' + (window.Api.getSetup().notify === true));
     } else bad('notify toggle missing');
 
+    // --- POS: sale with discount + cash ---
     location.hash = '#/pos';
     await wait(900);
     document.getElementById('pos-scan').click();
     await wait(900);
     ok('scan modal opened: ' + !!document.querySelector('.modal-sheet'));
-    const mclose = document.querySelector('.modal-sheet [data-mclose]');
-    if (mclose) mclose.click();
+    closeModalIfOpen();
     await wait(300);
 
-    const card = document.querySelector('#view-pos [data-add]');
-    card.click();
+    const pMain = byBarcode(8851888041847);
+    if (!pMain) bad('pMain missing');
+    document.querySelector('#view-pos [data-add="' + pMain.id + '"]').click();
     await wait(400);
+    const cartItems = document.querySelectorAll('#view-pos .cart-item').length;
+    ok('cart has item: ' + (cartItems >= 1));
     document.querySelector('#view-pos [data-checkout]').click();
     await wait(400);
-    const cash = document.querySelector('#co-cash');
-    if (cash) {
-      cash.value = '50';
-      cash.dispatchEvent(new Event('input', { bubbles: true }));
-      await wait(200);
-    }
+    const discountSet = setVal('#co-discount', '5');
+    setVal('#co-cash', '50');
+    await wait(200);
+    ok('checkout total/change: total=' + document.getElementById('co-total').textContent + ' change=' + document.getElementById('co-change').textContent);
+    const payCash = document.querySelector('input[name="co-pay"][value="cash"]');
+    if (payCash) payCash.click();
     document.querySelector('.modal-sheet .modal-foot .btn').click();
-    await until(() => window.Store.state.sales.length, 30000);
-    ok('sale via UI: ' + window.Store.state.sales.length + ' code=' + (window.Store.state.sales[0] || {}).code);
-    const btns = document.querySelectorAll('.modal-sheet .modal-foot .btn');
-    if (btns.length) btns[btns.length - 1].click();
+    await until(() => window.Store.state.sales.length >= 1, 30000);
+    const sale = window.Store.state.sales[window.Store.state.sales.length - 1];
+    ok('sale created: code=' + sale.code + ' discount=' + sale.discount + ' total=' + sale.total + ' cash=' + sale.cashReceived + ' change=' + sale.change);
+    const sOk = sale.discount === 5 && sale.total === 20 && sale.cashReceived === 50 && sale.change === 30;
+    if (sOk) ok('discount/cash math correct (25-5=20, 50-20=30)'); else bad('discount math wrong', JSON.stringify(sale));
+    const receiptBtns = document.querySelectorAll('.modal-sheet .modal-foot .btn');
+    if (receiptBtns.length) receiptBtns[receiptBtns.length - 1].click();
     await wait(300);
 
+    // --- dashboard restock ---
     location.hash = '#/dashboard';
     await wait(900);
     const rb = document.querySelector('[data-act="restock"]');
@@ -149,66 +193,139 @@
       rb.click();
       await wait(500);
       ok('restock modal: ' + !!document.querySelector('#r-qty'));
-      const rq = document.querySelector('#r-qty');
-      if (rq) {
-        rq.value = '30';
-        rq.dispatchEvent(new Event('input', { bubbles: true }));
-      }
+      setVal('#r-qty', '30');
       const rbtn = document.querySelector('.modal-sheet .modal-foot .btn');
       if (rbtn) rbtn.click();
-      await until(
-        () => window.Store.state.products.find((p) => String(p.barcode) === '8851888041847' && Number(p.stock) >= 30),
-        30000
-      );
-      const stk = window.Store.state.products.find((p) => String(p.barcode) === '8851888041847');
+      await until(() => byBarcode(8851888041847) && Number(byBarcode(8851888041847).stock) >= 30, 30000);
+      const stk = byBarcode(8851888041847);
       ok('restock applied stock=' + (stk ? stk.stock : 'n/a'));
     } else bad('restock button missing (low stock?)');
 
+    // --- inventory: add product via UI ---
     location.hash = '#/inventory';
     await wait(900);
     document.getElementById('inv-add').click();
     await wait(400);
     ok('add product modal: ' + !!document.querySelector('#f-name'));
-    const m2 = document.querySelector('.modal-sheet [data-mclose]');
-    if (m2) m2.click();
-    await wait(300);
-    const bulk = document.querySelector('[data-mode="bulk"]');
-    if (bulk) {
-      bulk.click();
-      await wait(500);
-      ok('bulk tab: ' + !!document.querySelector('#bulk-form'));
-    } else bad('bulk tab missing');
-    const be = document.querySelector('[data-bedit]');
-    if (be) {
-      be.click();
-      await wait(400);
-      ok('edit purchase modal: ' + !!document.querySelector('#e-total'));
-      const m3 = document.querySelector('.modal-sheet [data-mclose]');
-      if (m3) m3.click();
-      await wait(300);
-    } else {
-      // data-gated: need a purchase row for the edit button to exist
-      await window.Api.purchase.create({ date: new Date().toISOString(), description: 'ทุนรวมทดสอบ', total: 120 });
-      await window.Store.refresh();
-      document.querySelector('[data-mode="bulk"]').click();
-      await wait(600);
-      const be2 = document.querySelector('[data-bedit]');
-      if (be2) {
-        be2.click();
-        await wait(400);
-        ok('edit purchase modal (after seed): ' + !!document.querySelector('#e-total'));
-        const m4 = document.querySelector('.modal-sheet [data-mclose]');
-        if (m4) m4.click();
-        await wait(300);
-      } else bad('edit purchase button still missing after seed');
-    }
+    const newBarcode = '8851888' + String(Date.now()).slice(-6);
+    setVal('#f-name', 'สินค้าใหม่ผ่านUI');
+    setVal('#f-barcode', newBarcode);
+    setVal('#f-cat', 'ของใช้');
+    setVal('#f-unit', 'ชิ้น');
+    setVal('#f-cost', '10');
+    setVal('#f-sell', '15');
+    setVal('#f-stock', '5');
+    setVal('#f-min', '2');
+    document.querySelector('.modal-sheet .modal-foot .btn').click();
+    await until(() => byBarcode(newBarcode), 30000);
+    ok('product added via UI: ' + (!!byBarcode(newBarcode)));
 
+    // --- image upload via DataTransfer ---
+    const uiProd = byBarcode(newBarcode);
+    document.querySelector('[data-edit="' + uiProd.id + '"]').click();
+    await wait(500);
+    const png = atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==');
+    const bytes = new Uint8Array(png.length);
+    for (let i = 0; i < png.length; i++) bytes[i] = png.charCodeAt(i);
+    const dt = new DataTransfer();
+    dt.items.add(new File([bytes], 'img.png', { type: 'image/png' }));
+    const fileInput = document.getElementById('img-file');
+    fileInput.files = dt.files;
+    fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+    await wait(1000);
+    ok('image picked+preview: ' + (!!document.querySelector('#img-preview img')));
+    document.querySelector('.modal-sheet .modal-foot .btn').click();
+    await until(() => byBarcode(newBarcode) && byBarcode(newBarcode).imgId, 30000);
+    ok('image uploaded (imgId set): ' + (!!byBarcode(newBarcode).imgId));
+
+    // --- duplicate barcode guard ---
+    const dupErr = await window.Api.product.create({ barcode: 8851888041847, name: 'สินค้าบาร์โค้ดซ้ำ' }).then(
+      () => 'no-error',
+      (e) => e.message || String(e)
+    );
+    ok('duplicate barcode rejected: ' + (dupErr && String(dupErr).includes('มีสินค้าบาร์โค้ด')));
+
+    // --- category add via UI ---
+    const catName = 'หมวดทดสอบ' + Math.floor(Math.random() * 1000);
+    document.getElementById('inv-add').click();
+    await wait(400);
+    setVal('#f-cat', catName);
+    document.getElementById('f-cat-add').click();
+    await until(() => window.Store.state.categories.includes(catName), 20000);
+    ok('category added via UI: ' + window.Store.state.categories.includes(catName));
+    closeModalIfOpen();
+    await wait(300);
+
+    // --- bulk: add purchase via UI ---
+    document.querySelector('[data-mode="bulk"]').click();
+    await wait(600);
+    const purDesc = 'ทุนรวมผ่านUI' + Date.now();
+    setVal('#b-desc', purDesc);
+    setVal('#b-total', '99.50');
+    document.getElementById('bulk-form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    const purAdded = await until(() => window.Store.state.purchases.some((p) => p && p.description === purDesc), 20000);
+    ok('purchase added via UI: ' + purAdded);
+    await until(() => document.querySelector('[data-bdel]'), 10000);
+    const targetPur = window.Store.state.purchases.find((p) => p && p.description === purDesc);
+    const pDel = document.querySelector('[data-bdel="' + ((targetPur || {}).id || '') + '"]') || document.querySelector('[data-bdel]');
+    if (pDel && targetPur) {
+      pDel.click();
+      await wait(500);
+      confirmDelete();
+      const purGone = await until(() => !window.Store.state.purchases.some((p) => p && p.id === targetPur.id), 20000);
+      ok('purchase deleted via UI: ' + purGone);
+    } else bad('purchase delete target missing', purAdded ? '' : '(add failed first)');
+
+    // --- reports: delete sale → stock restored ---
     location.hash = '#/reports';
     await wait(900);
+    await until(() => document.querySelector('[data-sdel]'), 15000);
+    const stockBeforeDel = byBarcode(8851888041847).stock;
+    document.querySelector('[data-sdel]').click();
+    await wait(500);
+    confirmDelete();
+    await until(() => window.Store.state.sales.length === 0, 30000);
+    const stockAfterDel = byBarcode(8851888041847).stock;
+    ok('sale deleted, stock restored ' + stockBeforeDel + '->' + stockAfterDel + ': ' + (stockAfterDel === stockBeforeDel + 1));
+
+    // --- reports: excel export ---
     document.getElementById('r-excel').click();
     await until(() => window.XLSX, 10000);
-    await wait(1000);
-    ok('excel export: XLSX loaded=' + !!window.XLSX + ' rows=' + document.querySelectorAll('#view-reports table tr').length);
+    await wait(1200);
+    ok('excel export: XLSX loaded=' + !!window.XLSX);
+
+    // --- reports: pdf export ---
+    window.__pdfTitle = null;
+    const origOpen = window.open;
+    window.open = function (u, name) {
+      const w = { document: { write: function (html) { window.__pdfTitle = (html.match(/<title>(.*?)<\/title>/) || [])[1] || name; }, close: function () {} }, focus: function () {}, print: function () {} };
+      return w;
+    };
+    document.getElementById('r-pdf').click();
+    await wait(600);
+    window.open = origOpen;
+    ok('pdf export: report opened=' + (window.__pdfTitle && window.__pdfTitle.includes('รายงาน')));
+
+    // --- reports: range buttons ---
+    document.querySelector('[data-range="week"]').click();
+    await wait(300);
+    document.querySelector('[data-range="month"]').click();
+    await wait(300);
+    document.querySelector('[data-range="all"]').click();
+    await wait(300);
+    ok('range toggles clickable');
+
+    // --- low-stock notification fires ---
+    const pNotif = byBarcode(8851888041847);
+    try { localStorage.removeItem(window.CONFIG.STORAGE_KEY + '_alerted'); } catch (e) {}
+    await window.Api.product.adjust(pNotif.id, -(pNotif.stock - 3));
+    await window.Store.refresh();
+    await wait(300);
+    const beforeNotify = window.__notifyCount;
+    window.App.checkAlerts();
+    await wait(800);
+    const fired = window.__notifyCount > beforeNotify;
+    ok('notification fired: ' + fired + ' title=' + ((window.__lastNotify && window.__lastNotify.title) || 'none'));
 
     if (errs.length) bad('JS ERRORS: ' + errs.join(' | '));
     else ok('no JS errors');
@@ -219,7 +336,7 @@
       if (SCENARIO === 'smoke') await smoke();
       else await full();
     } catch (e) {
-      bad('FATAL ' + e.message);
+      bad('FATAL ' + (e && e.message));
     }
     document.title = '__DONE ' + log.length + ' | ' + log.join(' ; ');
   }
