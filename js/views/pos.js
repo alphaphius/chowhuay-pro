@@ -191,6 +191,8 @@
   }
 
   function wirePosEvents(container) {
+    if (container.__wired) return;   // renders re-render innerHTML; don't stack listeners
+    container.__wired = true;
     container.addEventListener('input', (e) => {
       if (e.target.id === 'pos-search') {
         filterQ = e.target.value;
@@ -437,18 +439,23 @@
 
     // native BarcodeDetector (fast) on Chrome/Android
     if ('BarcodeDetector' in window) {
+      view.innerHTML = '<div style="padding:20px;text-align:center;font-size:14px;color:#fff;"><span class="material-symbols-outlined" style="font-size:28px;">videocam</span><div style="margin-top:8px;">กำลังเปิดกล้อง...</div></div>';
       navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
         .then((stream) => {
           const video = document.createElement('video');
           video.setAttribute('playsinline', '');
+          video.setAttribute('muted', '');
           video.style.width = '100%';
           video.style.height = '240px';
           video.style.objectFit = 'cover';
           view.innerHTML = '';
           view.appendChild(video);
           video.srcObject = stream;
-          video.play();
-          const detector = new BarcodeDetector({ formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'itf', 'qr_code', 'codabar'] });
+          video.play().catch(() => {});
+          let detector;
+          try { detector = new BarcodeDetector({ formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'itf', 'qr_code', 'codabar'] }); }
+          catch (e) { detector = null; }
+          if (!detector) { stream.getTracks().forEach((t) => t.stop()); throw new Error('กล้องนี้ไม่รองรับการสแกน'); }
           let running = true;
           scanCleanup = () => { running = false; stream.getTracks().forEach((t) => t.stop()); };
           (function loop() {
@@ -460,7 +467,7 @@
           })();
         })
         .catch((err) => {
-          view.innerHTML = '<div style="padding:20px;text-align:center;font-size:14px;">เปิดกล้องไม่สำเร็จ<br><span style="color:#ffb4ab;">' + U.esc(err.message || '') + '</span></div>';
+          view.innerHTML = '<div style="padding:20px;text-align:center;font-size:14px;">เปิดกล้องไม่สำเร็จ<br><span style="color:#ffb4ab;">' + U.esc(err.name === 'NotAllowedError' ? 'ยังไม่ได้อนุญาตกล้อง — ไปที่การตั้งค่าเบราว์เซอร์แล้วอนุญาต' : (err.message || '')) + '</span></div>';
           if (view.nextElementSibling) view.nextElementSibling.style.display = '';
         });
     } else {
@@ -468,9 +475,9 @@
       loadScript('vendor/html5-qrcode.min.js', () => {
         try {
           const qr = new Html5Qrcode('scan-view');
-          scanCleanup = () => { try { qr.stop().then(() => qr.clear()); } catch (e) {} };
+          scanCleanup = () => { try { qr.stop().then(() => qr.clear()).catch(() => {}); } catch (e) {} };
           qr.start({ facingMode: 'environment' }, { fps: 8, qrbox: { width: 220, height: 150 } }, (text) => found(text), () => {}).catch((err) => {
-            view.innerHTML = '<div style="padding:20px;text-align:center;font-size:14px;">เปิดกล้องไม่สำเร็จ</div>';
+            view.innerHTML = '<div style="padding:20px;text-align:center;font-size:14px;">เปิดกล้องไม่สำเร็จ<br><span style="color:#ffb4ab;">' + U.esc(err && err.name === 'NotAllowedError' ? 'ยังไม่ได้อนุญาตกล้อง — ไปที่การตั้งค่าเบราว์เซอร์แล้วอนุญาต' : '') + '</span></div>';
             if (view.nextElementSibling) view.nextElementSibling.style.display = '';
           });
         } catch (e) {

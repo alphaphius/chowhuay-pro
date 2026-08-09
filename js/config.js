@@ -3,7 +3,7 @@ window.CONFIG = {
   APP_VERSION: '1.0.0',
   // Bump when a deploy changes cacheable assets. App compares this against
   // localStorage and self-reloads once so stale PWAs pick up the new bundle.
-  BOOT_VERSION: 6,
+  BOOT_VERSION: 7,
   // ตั้งค่า URL ของ Google Apps Script Web App (จบด้วย /exec)
   // ตัวอย่าง: 'https://script.google.com/macros/s/AKfycb.../exec'
   GAS_URL: 'https://script.google.com/macros/s/AKfycbzWEahwMPfSI4tzCFbeNrREVCGxPHslHCu7yF7lP-eX1Ushzf5E730N-kNc-rWLWxA8zQ/exec',

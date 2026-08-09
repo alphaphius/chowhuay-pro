@@ -230,6 +230,10 @@
   async function saveStore(container) {
     const name = document.getElementById('s-store').value.trim();
     if (!name) { UI.toast('ระบุชื่อร้านก่อน', 'error'); return; }
+    const btn = document.getElementById('s-save-store');
+    if (btn.disabled) return;
+    btn.disabled = true;
+    btn.innerHTML = UI.icon('progress_activity', 'spin') + ' กำลังบันทึก...';
     try {
       await Api.settings.set('storeName', name);
       Store.state.settings.storeName = name;
@@ -237,11 +241,17 @@
       UI.toast('บันทึกข้อมูลร้านแล้ว');
       render(container);
     } catch (err) { UI.toast(err.message, 'error'); }
+    btn.disabled = false;
+    btn.innerHTML = UI.icon('save') + ' บันทึกข้อมูลร้าน';
   }
 
   async function savePass(container) {
     const v = document.getElementById('s-pass').value;
     if (!/^\d{4}$/.test(v)) { UI.toast('รหัสผ่านต้องเป็นตัวเลข 4 หลัก', 'error'); return; }
+    const btn = document.getElementById('s-save-pass');
+    if (btn.disabled) return;
+    btn.disabled = true;
+    btn.innerHTML = UI.icon('progress_activity', 'spin') + ' กำลังบันทึก...';
     try {
       await Api.settings.set('passcode', v);
       Api.storePasscode(v);
@@ -249,6 +259,8 @@
       Store.persist();
       UI.toast('เปลี่ยนรหัสผ่านแล้ว');
     } catch (err) { UI.toast(err.message, 'error'); }
+    btn.disabled = false;
+    btn.innerHTML = UI.icon('lock') + ' บันทึกรหัสผ่าน';
   }
 
   function clearCache(container) {

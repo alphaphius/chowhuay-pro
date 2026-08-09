@@ -147,11 +147,20 @@
       const adj = e.target.closest('[data-adj]');
       if (adj) {
         const id = adj.dataset.id, delta = parseInt(adj.dataset.adj, 10);
+        if (adj.disabled) return;
+        adj.disabled = true;
+        const icon = adj.querySelector('.material-symbols-outlined');
+        if (icon) icon.classList.add('spin');
         try {
           await Api.product.adjust(id, delta);
           await Store.refresh();
           render(container);
-        } catch (err) { UI.toast(err.message, 'error'); }
+          UI.toast(delta > 0 ? 'เพิ่มสต็อกแล้ว' : 'ปรับสต็อกแล้ว');
+        } catch (err) {
+          adj.disabled = false;
+          if (icon) icon.classList.remove('spin');
+          UI.toast(err.message, 'error');
+        }
         return;
       }
       const bedit = e.target.closest('[data-bedit]');
@@ -248,14 +257,20 @@
     body.querySelector('#f-cat-add').addEventListener('click', async () => {
       const name = body.querySelector('#f-cat').value.trim();
       if (!name) { UI.toast('พิมพ์ชื่อหมวดหมู่ก่อน', 'error'); return; }
+      const btn = body.querySelector('#f-cat-add');
+      if (btn.disabled) return;
+      btn.disabled = true;
+      btn.innerHTML = UI.icon('progress_activity', 'spin');
       try {
         await Api.category.create(name);
         await Store.refresh();
         UI.toast('เพิ่มหมวดหมู่ "' + name + '" แล้ว');
       } catch (err) { UI.toast(err.message, 'error'); }
+      btn.disabled = false;
+      btn.innerHTML = UI.icon('add');
     });
     body.querySelector('#f-scan').addEventListener('click', () => {
-      UI.closeModal();
+      // keep the product form open — scanner stacks above it (backdrop painted later)
       ViewPos.openScanner((code) => {
         const found = Store.byBarcode(code);
         const barcodeEl = document.getElementById('f-barcode');
@@ -335,12 +350,20 @@
     const desc = document.getElementById('b-desc').value.trim();
     const total = U.num(document.getElementById('b-total').value);
     if (total <= 0) { UI.toast('ต้องระบุยอดทุน', 'error'); return; }
+    const btn = document.getElementById('b-save');
+    if (btn.disabled) return;
+    btn.disabled = true;
+    btn.innerHTML = UI.icon('progress_activity', 'spin') + ' กำลังบันทึก...';
     Api.purchase.create({ date: new Date(date).toISOString(), description: desc, total }).then(() => {
       UI.toast('บันทึกต้นทุนแล้ว');
       return Store.refresh();
     }).then(() => {
       render(document.getElementById('view-inventory'));
-    }).catch((err) => UI.toast(err.message, 'error'));
+    }).catch((err) => {
+      btn.disabled = false;
+      btn.innerHTML = UI.icon('check_circle') + ' บันทึกต้นทุน';
+      UI.toast(err.message, 'error');
+    });
   }
 
   function editBulk(id) {
@@ -353,6 +376,9 @@
       <div class="field"><label>ราคาทุนทั้งหมด (บาท)</label><input class="input" id="e-total" type="number" min="0" step="0.01" value="${p.total}"></div>
     `;
     const saveBtn = UI.modalBtn('บันทึก', 'btn-secondary btn-block btn-lg', async () => {
+      if (saveBtn.disabled) return;
+      saveBtn.disabled = true;
+      saveBtn.innerHTML = UI.icon('progress_activity', 'spin') + ' กำลังบันทึก...';
       try {
         await Api.purchase.update({
           id: p.id,
@@ -364,7 +390,11 @@
         UI.closeModal();
         UI.toast('อัปเดตแล้ว');
         render(document.getElementById('view-inventory'));
-      } catch (err) { UI.toast(err.message, 'error'); }
+      } catch (err) {
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = UI.icon('check_circle') + ' บันทึก';
+        UI.toast(err.message, 'error');
+      }
     });
     UI.openModal({ title: 'แก้ไขทุนรวม', body, foot: [saveBtn] });
   }
@@ -390,6 +420,9 @@
     const saveBtn = UI.modalBtn('เพิ่มสต็อก', 'btn-secondary btn-block btn-lg', async () => {
       const n = U.num(body.querySelector('#r-qty').value);
       if (n <= 0) { UI.toast('ระบุจำนวนให้ถูกต้อง', 'error'); return; }
+      if (saveBtn.disabled) return;
+      saveBtn.disabled = true;
+      saveBtn.innerHTML = UI.icon('progress_activity', 'spin') + ' กำลังเพิ่ม...';
       try {
         await Api.product.adjust(p.id, n);
         await Store.refresh();
@@ -397,7 +430,11 @@
         UI.toast('เพิ่มสต็อกแล้ว');
         render(document.getElementById('view-inventory'));
         render(document.getElementById('view-dashboard'));
-      } catch (err) { UI.toast(err.message, 'error'); }
+      } catch (err) {
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = UI.icon('add') + ' เพิ่มสต็อก';
+        UI.toast(err.message, 'error');
+      }
     });
     UI.openModal({ title: 'เติมสต็อก', body, foot: [saveBtn] });
   }
