@@ -619,12 +619,7 @@ function uploadImage(b64, filename) {
 // the shop phone). Share every uploaded image publicly so thumbnails load.
 function shareFilePublic(file) {
   try {
-    if (typeof Drive !== 'undefined' && Drive.Files) {
-      Drive.Files.update({ 'writersCanShare': false }, file.getId(), null, { 'supportsAllDrives': true });
-      Drive.Permissions.insert({ role: 'reader', type: 'anyone', allowFileDiscovery: false }, file.getId());
-    } else {
-      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-    }
+    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
   } catch (e) {
     Logger.log('share file %s failed: %s', file.getName(), e.message);
   }
