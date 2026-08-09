@@ -69,6 +69,10 @@
 
     refresh() {
       return refreshSilent();
+    },
+
+    checkAlerts() {
+      checkLowStockAlerts();
     }
   };
 
@@ -82,8 +86,33 @@
 
   function refreshSilent() {
     return Api.isConfigured()
-      ? Store.refresh().then(() => { ViewSettings.updateInstallButton(); }).catch((err) => { console.warn('sync fail', err); })
+      ? Store.refresh().then(() => { ViewSettings.updateInstallButton(); checkLowStockAlerts(); }).catch((err) => { console.warn('sync fail', err); })
       : Promise.resolve();
+  }
+
+  // ---- low-stock browser notifications (once per product per day) ----
+  function checkLowStockAlerts() {
+    if (!U.notifySupported() || U.notifyPermission() !== 'granted') return;
+    const setup = Api.getSetup();
+    if (!setup.notify) return;
+    const low = Store.lowStock().concat(Store.outOfStock());
+    if (!low.length) return;
+    const key = CONFIG.STORAGE_KEY + '_alerted';
+    let alerted = {};
+    try { alerted = JSON.parse(localStorage.getItem(key) || '{}'); } catch (e) {}
+    const today = U.todayStr();
+    const storeName = (Store.state.settings && Store.state.settings.storeName) || 'ChowHuay Pro';
+    low.forEach((p) => {
+      if (alerted[p.id] === today) return;
+      alerted[p.id] = today;
+      const out = U.num(p.stock) <= 0;
+      U.notifyShow(storeName + ' — สินค้า' + (out ? 'หมด' : 'ใกล้หมด'), {
+        body: p.name + ' (เหลือ ' + U.fmtInt(p.stock) + ' ' + (p.unit || 'ชิ้น') + ')',
+        icon: 'icons/icon-192.png',
+        tag: 'lowstock-' + p.id
+      });
+    });
+    try { localStorage.setItem(key, JSON.stringify(alerted)); } catch (e) {}
   }
 
   function route() {

@@ -415,13 +415,14 @@ function getSettings() {
 function setSetting(key, value) {
   var sh = sheet(SHEET_SETTINGS, SETTING_HEADERS);
   var values = sh.getDataRange().getValues();
+  var found = false;
   for (var r = 1; r < values.length; r++) {
     if (String(values[r][0]) === String(key)) {
       sh.getRange(r + 1, 2).setValue(value);
-      return { ok: true, key: key, value: value };
+      found = true;
     }
   }
-  sh.appendRow([key, value]);
+  if (!found) sh.appendRow([key, value]);
   return { ok: true, key: key, value: value };
 }
 

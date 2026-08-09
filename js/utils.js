@@ -126,9 +126,29 @@
     setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
   }
 
+  // ---- browser notifications ----
+  function notifySupported() {
+    return typeof window.Notification !== 'undefined';
+  }
+  function notifyPermission() {
+    if (!notifySupported()) return 'unsupported';
+    return Notification.permission; // granted | denied | default
+  }
+  function notifyRequest() {
+    if (!notifySupported()) return Promise.resolve('unsupported');
+    if (Notification.permission === 'granted') return Promise.resolve('granted');
+    if (Notification.permission === 'denied') return Promise.resolve('denied');
+    try { return Notification.requestPermission(); } catch (e) { return Promise.resolve('denied'); }
+  }
+  function notifyShow(title, opts) {
+    if (!notifySupported() || Notification.permission !== 'granted') return null;
+    try { return new Notification(title, opts || {}); } catch (e) { return null; }
+  }
+
   global.U = {
     num, round2, fmtMoney, fmtInt, fmtDate, fmtTime, fmtDateTime, todayStr,
     esc, uid, debounce, loadImage, compressImage, imgUrl, sameDay,
-    startOfWeek, startOfMonth, download
+    startOfWeek, startOfMonth, download,
+    notifySupported, notifyPermission, notifyRequest, notifyShow
   };
 })(window);

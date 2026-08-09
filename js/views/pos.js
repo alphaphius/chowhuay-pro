@@ -327,6 +327,7 @@
       const view = document.getElementById('view-pos');
       if (view) { drawGrid(view); updateCartUI(view); }
       App.renderView(true);
+      if (window.App && App.checkAlerts) App.checkAlerts();
       showReceipt(sale, total, discount, payment);
     }).catch((err) => {
       btn.disabled = false;

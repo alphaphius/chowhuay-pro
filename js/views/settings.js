@@ -95,6 +95,24 @@
       </div>
 
       <div class="card mb">
+        <div class="card-body">
+          <h3 class="h3 mb">การแจ้งเตือน</h3>
+          <div style="display:flex;align-items:center;justify-content:space-between;">
+            <div>
+              <span class="title">แจ้งเตือนสินค้าใกล้หมด</span>
+              <p class="caption" id="s-notify-status">ส่งการแจ้งเตือนเบราว์เซอร์เมื่อสต็อกต่ำกว่าเกณฑ์</p>
+            </div>
+            <label style="position:relative;display:inline-block;cursor:pointer;">
+              <input type="checkbox" id="s-notify" ${setup.notify ? 'checked' : ''} class="hidden">
+              <div style="width:48px;height:28px;background:${setup.notify ? 'var(--primary)' : 'var(--outline-variant)'};border-radius:999px;transition:background 0.2s;position:relative;">
+                <span style="position:absolute;top:3px;left:${setup.notify ? '23px' : '3px'};width:22px;height:22px;background:#fff;border-radius:50%;transition:left 0.2s;box-shadow:var(--elev-1);"></span>
+              </div>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <div class="card mb">
         <div class="card-body" style="display:flex;align-items:center;justify-content:space-between;">
           <div>
             <h3 class="h3">ข้อมูลเครื่อง (แคช)</h3>
@@ -116,6 +134,29 @@
     if (document.getElementById('s-dark')) {
       document.getElementById('s-dark').addEventListener('change', (e) => {
         applyTheme(document.documentElement.dataset.theme, e.target.checked ? 'dark' : 'light');
+      });
+    }
+    const notifyToggle = document.getElementById('s-notify');
+    if (notifyToggle) {
+      notifyToggle.addEventListener('change', async (e) => {
+        const on = e.target.checked;
+        if (on) {
+          const p = await U.notifyRequest();
+          if (p === 'granted') {
+            Api.saveSetup(Object.assign(Api.getSetup(), { notify: true }));
+            UI.toast('เปิดการแจ้งเตือนแล้ว');
+          } else if (p === 'denied') {
+            UI.toast('ถูกบล็อกการแจ้งเตือน — อนุญาตในตั้งค่าเบราว์เซอร์', 'error');
+            e.target.checked = false;
+            render(container);
+          } else {
+            Api.saveSetup(Object.assign(Api.getSetup(), { notify: true }));
+            UI.toast('เปิดแล้ว (ยังไม่ได้อนุญาต)');
+          }
+        } else {
+          Api.saveSetup(Object.assign(Api.getSetup(), { notify: false }));
+          UI.toast('ปิดการแจ้งเตือนแล้ว');
+        }
       });
     }
   }

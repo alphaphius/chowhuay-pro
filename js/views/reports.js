@@ -228,16 +228,23 @@
 
   // ---- export ----
   function ensureXLSX() {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       if (window.XLSX) return resolve();
       const s = document.createElement('script');
       s.src = 'vendor/xlsx.full.min.js';
       s.onload = resolve;
+      s.onerror = () => reject(new Error('โหลดไลบรารี Excel ไม่สำเร็จ'));
       document.head.appendChild(s);
     });
   }
 
   async function exportExcel() {
+    try {
+      await ensureXLSX();
+    } catch (err) {
+      UI.toast(err.message, 'error');
+      return;
+    }
     const { from, to } = dateRange();
     const sum = Store.summaryByRange(from, to);
     const sales = Store.state.sales.filter((s) => Store.inRange(s.date, from, to));
