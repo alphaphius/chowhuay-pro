@@ -27,7 +27,7 @@
     const sep = url.indexOf('?') >= 0 ? '&' : '?';
     let res;
     try {
-      res = await fetch(url + sep + 'action=' + encodeURIComponent(action) + '&_=' + Date.now(), {
+      res = await fetch(url + sep + 'action=' + encodeURIComponent(action) + '&_=' + Date.now() + (window.__TEST_MODE ? '&sheet=test' : ''), {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify(body || {})
@@ -50,7 +50,9 @@
 
   async function ping() { return call('ping', {}); }
 
-  async function loadAll() { return call('getAll', {}); }
+  async function loadAll(since) {
+    return call('getAll', since ? { since } : {});
+  }
 
   const Api = {
     call, ping, loadAll,

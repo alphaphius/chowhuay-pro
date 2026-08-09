@@ -3,7 +3,7 @@
  * Data (Apps Script POST): never cached by SW (app manages its own cache).
  * Images (Drive thumbs) & fonts: cache-first with background refresh.
  */
-const CACHE = 'chowhuay-v3';
+const CACHE = 'chowhuay-v4';
 const CORE = [
   './',
   './index.html',
@@ -20,6 +20,9 @@ const CORE = [
   './js/views/reports.js',
   './js/views/settings.js',
   './js/app.js',
+  './vendor/chart.umd.min.js',
+  './vendor/xlsx.full.min.js',
+  './vendor/html5-qrcode.min.js',
   './icons/favicon.svg',
   './icons/icon-192.png',
   './icons/icon-512.png',

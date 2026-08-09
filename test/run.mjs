@@ -29,7 +29,7 @@ mkdirSync(DL, { recursive: true });
 // --- 1. generate test page ---------------------------------------------------
 const driver = readFileSync(join(__dirname, 'driver.js'), 'utf8');
 let html = readFileSync(join(ROOT, 'index.html'), 'utf8');
-html = html.replace('</body>', `<script>window.__SCENARIO='${scenario}';</script>\n<script>${driver}</script>\n</body>`);
+html = html.replace('</body>', `<script>window.__SCENARIO='${scenario}';window.__TEST_MODE=true;</script>\n<script>${driver}</script>\n</body>`);
 mkdirSync(join(__dirname, 'test'), { recursive: true });
 writeFileSync(join(ROOT, 'index.test.html'), html);
 console.log(`[1/4] generated index.test.html (scenario=${scenario})`);

@@ -15,20 +15,28 @@
  * (avoids CORS preflight). JSON payload in the body, action in ?action=
  */
 
-var SCRIPT_VER = '1.0.0';
+var SCRIPT_VER = '1.1.0';
 
 var SHEET_PRODUCTS = 'Products';
 var SHEET_SALES = 'Sales';
 var SHEET_PURCHASES = 'Purchases';
 var SHEET_SETTINGS = 'Settings';
 var SHEET_CATEGORIES = 'Categories';
+var SHEET_TOMBSTONES = 'Tombstones';
 var FOLDER_NAME = 'ChowHuay Pro Images';
+var TOMBSTONE_DAYS = 180;
 
 var PRODUCT_HEADERS = ['id', 'barcode', 'name', 'category', 'unit', 'cost', 'sell', 'stock', 'minStock', 'imgId', 'created', 'updated'];
-var SALE_HEADERS = ['id', 'code', 'date', 'items', 'subtotal', 'discount', 'total', 'profit', 'payment', 'cashReceived', 'change'];
-var PURCHASE_HEADERS = ['id', 'date', 'description', 'total'];
+var SALE_HEADERS = ['id', 'code', 'date', 'items', 'subtotal', 'discount', 'total', 'profit', 'payment', 'cashReceived', 'change', 'updated'];
+var PURCHASE_HEADERS = ['id', 'date', 'description', 'total', 'updated'];
 var SETTING_HEADERS = ['key', 'value'];
 var CATEGORY_HEADERS = ['name'];
+var TOMBSTONE_HEADERS = ['table', 'id', 'updated'];
+
+// When the request URL carries ?sheet=test, every read/write targets a
+// dedicated TEST spreadsheet (auto-created clone) so e2e runs can never
+// touch the real store data or images.
+var TEST_MODE = false;
 
 /* ------------------------------------------------------------------ *
  *  Entry points
@@ -53,6 +61,7 @@ function doPost(e) {
 }
 
 function route(action, params, body) {
+  TEST_MODE = !!(params && params.sheet === 'test');
   try {
     var result = handle(action, params, body);
     return jsonOk(result);
@@ -66,7 +75,8 @@ function handle(action, params, body) {
   switch (action) {
     case 'ping': return { ok: true, ver: SCRIPT_VER, time: new Date().toISOString(), sheets: getSS().getSheets().map(function (s) { return s.getName(); }) };
     case 'init': return initSheets();
-    case 'getAll': return getAll();
+    case 'getAll': return getAll(body.since);
+    case 'test:reset': return testReset();
     case 'product:create': return createProduct(body.product || {});
     case 'product:update': return updateProduct(body.product || {});
     case 'product:delete': return deleteProduct((body.product && body.product.id) || body.id);
@@ -92,7 +102,50 @@ function handle(action, params, body) {
  * ------------------------------------------------------------------ */
 
 function getSS() {
+  if (TEST_MODE) return ensureTestSS();
   return SpreadsheetApp.getActiveSpreadsheet();
+}
+
+// Lazily create (once) a dedicated TEST spreadsheet cloned from the live one.
+function ensureTestSS() {
+  var props = PropertiesService.getScriptProperties();
+  var id = props.getProperty('TEST_SS_ID');
+  if (id) {
+    try { return SpreadsheetApp.openById(id); } catch (e) {}
+  }
+  var live = SpreadsheetApp.getActiveSpreadsheet();
+  var test = SpreadsheetApp.create('ChowHuay Pro (TEST) ' + Date.now());
+  live.getSheets().forEach(function (s) {
+    var dest = test.getSheetByName(s.getName());
+    if (!dest) dest = test.insertSheet(s.getName());
+    var vals = s.getDataRange().getValues();
+    if (vals.length) dest.getRange(1, 1, vals.length, vals[0].length).setValues(vals);
+  });
+  var def = test.getSheetByName('Sheet1');
+  if (def) test.deleteSheet(def);
+  props.setProperty('TEST_SS_ID', test.getId());
+  return test;
+}
+
+function testReset() {
+  if (!TEST_MODE) throw new Error('test:reset only allowed in test mode');
+  var props = PropertiesService.getScriptProperties();
+  var id = props.getProperty('TEST_SS_ID');
+  if (id) {
+    try {
+      DriveApp.getFileById(SpreadsheetApp.openById(id).getId()).setTrashed(true);
+    } catch (e) { Logger.log('test ss trash failed: %s', e.message); }
+    props.deleteProperty('TEST_SS_ID');
+  }
+  try {
+    var folders = DriveApp.getFoldersByName(FOLDER_NAME + ' (TEST)');
+    if (folders.hasNext()) {
+      var f = folders.next();
+      f.getFiles().forEach(function (file) { file.setTrashed(true); });
+      f.setTrashed(true);
+    }
+  } catch (e) { Logger.log('test folder cleanup failed: %s', e.message); }
+  return { ok: true, reset: true };
 }
 
 function sheet(name, headers) {
@@ -115,12 +168,37 @@ function initSheets() {
   sheet(SHEET_PURCHASES, PURCHASE_HEADERS);
   sheet(SHEET_SETTINGS, SETTING_HEADERS);
   sheet(SHEET_CATEGORIES, CATEGORY_HEADERS);
+  sheet(SHEET_TOMBSTONES, TOMBSTONE_HEADERS);
+  ensureColumns();
   var cfg = getSettings();
   if (!cfg.storeName) setSetting('storeName', 'ร้านโชว์ห่วยของฉัน');
   if (!cfg.passcode) setSetting('passcode', '1234');
   if (!cfg.theme) setSetting('theme', 'blue');
   ensureImageFolder();
   return { ok: true, msg: 'sheets ready' };
+}
+
+// One-time migration: backfill the `updated` column on Sales/Purchases so
+// incremental (delta) syncs work on existing sheets.
+function ensureColumns() {
+  ensureColumn(sheet(SHEET_SALES, SALE_HEADERS), 'updated', 3);
+  ensureColumn(sheet(SHEET_PURCHASES, PURCHASE_HEADERS), 'updated', 2);
+}
+
+function ensureColumn(sh, colName, dateCol) {
+  var hs = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+  if (hs.indexOf(colName) >= 0) return;
+  var idx = hs.length + 1;
+  sh.getRange(1, idx).setValue(colName);
+  var n = sh.getLastRow();
+  if (n > 1) {
+    var dates = sh.getRange(2, dateCol, n - 1, 1).getValues();
+    var now = nowIso();
+    sh.getRange(2, idx, n - 1, 1).setValues(dates.map(function (r) {
+      var t = new Date(r[0]).getTime();
+      return [isNaN(t) ? now : new Date(t).toISOString()];
+    }));
+  }
 }
 
 /* ------------------------------------------------------------------ *
@@ -165,20 +243,56 @@ function isBlank(v) {
  *  getAll — full snapshot for the frontend cache
  * ------------------------------------------------------------------ */
 
-function getAll() {
+function getAll(since) {
+  ensureColumns();
   var categories = tableToObjects(sheet(SHEET_CATEGORIES, CATEGORY_HEADERS)).map(function (r) { return r.name; });
   var settings = getSettings();
   ensureImageFolder();
+  var sales = tableToObjects(sheet(SHEET_SALES, SALE_HEADERS));
+  var purchases = tableToObjects(sheet(SHEET_PURCHASES, PURCHASE_HEADERS));
+  var sinceT = since ? new Date(since).getTime() : null;
+  if (sinceT) {
+    sales = sales.filter(function (r) { return new Date(r.updated || r.date).getTime() >= sinceT; });
+    purchases = purchases.filter(function (r) { return new Date(r.updated || r.date).getTime() >= sinceT; });
+  }
+  var tombs = getTombstonesSince(sinceT);
   return {
     ok: true,
     products: tableToObjects(sheet(SHEET_PRODUCTS, PRODUCT_HEADERS)),
-    sales: tableToObjects(sheet(SHEET_SALES, SALE_HEADERS)),
-    purchases: tableToObjects(sheet(SHEET_PURCHASES, PURCHASE_HEADERS)),
+    sales: sales,
+    purchases: purchases,
     categories: categories,
     settings: settings,
+    deletedSales: tombs.sales,
+    deletedPurchases: tombs.purchases,
     syncedAt: nowIso(),
     ver: SCRIPT_VER
   };
+}
+
+/* ---- tombstones (for incremental delete propagation) ---- */
+
+function addTombstone(table, id) {
+  var sh = sheet(SHEET_TOMBSTONES, TOMBSTONE_HEADERS);
+  sh.appendRow([table, String(id), nowIso()]);
+}
+
+function getTombstonesSince(sinceT) {
+  var out = { sales: [], purchases: [] };
+  var sh = sheet(SHEET_TOMBSTONES, TOMBSTONE_HEADERS);
+  var values = sh.getDataRange().getValues();
+  var cutoff = new Date().getTime() - TOMBSTONE_DAYS * 24 * 3600 * 1000;
+  var doomed = [];
+  for (var r = 1; r < values.length; r++) {
+    var t = new Date(values[r][2]).getTime() || 0;
+    if (sinceT && t >= sinceT) {
+      if (values[r][0] === 'sale') out.sales.push(String(values[r][1]));
+      else if (values[r][0] === 'purchase') out.purchases.push(String(values[r][1]));
+    }
+    if (t < cutoff) doomed.push(r + 1);
+  }
+  for (var i = doomed.length - 1; i >= 0; i--) sh.deleteRow(doomed[i]);
+  return out;
 }
 
 /* ------------------------------------------------------------------ *
@@ -303,14 +417,15 @@ function createSale(sale) {
   // Append sale row
   var sSheet = sheet(SHEET_SALES, SALE_HEADERS);
   var code = nextSaleCode(sSheet);
+  var updated = nowIso();
   var saleRow = [
-    uid('s'), code, nowIso(), JSON.stringify(items),
+    uid('s'), code, updated, JSON.stringify(items),
     round2(subtotal), round2(discount), round2(total), round2(profit),
-    payment, cashReceived ? round2(cashReceived) : '', round2(change)
+    payment, cashReceived ? round2(cashReceived) : '', round2(change), updated
   ];
   sSheet.appendRow(saleRow);
 
-  return { ok: true, sale: { id: saleRow[0], code: code, date: saleRow[2], items: items, subtotal: round2(subtotal), discount: round2(discount), total: round2(total), profit: round2(profit), payment: payment, cashReceived: cashReceived, change: round2(change) } };
+  return { ok: true, sale: { id: saleRow[0], code: code, date: saleRow[2], items: items, subtotal: round2(subtotal), discount: round2(discount), total: round2(total), profit: round2(profit), payment: payment, cashReceived: cashReceived, change: round2(change), updated: updated } };
 }
 
 function nextSaleCode(sh) {
@@ -349,6 +464,7 @@ function deleteSale(id) {
     SpreadsheetApp.flush();
   }
   sh.deleteRow(row);
+  addTombstone('sale', id);
   return { ok: true, id: id };
 }
 
@@ -357,13 +473,14 @@ function deleteSale(id) {
  * ------------------------------------------------------------------ */
 
 function buildPurchaseRow(p) {
-  return [p.id, p.date || nowIso(), p.description || '', num(p.total)];
+  return [p.id, p.date || nowIso(), p.description || '', num(p.total), p.updated || nowIso()];
 }
 
 function createPurchase(p) {
   var sh = sheet(SHEET_PURCHASES, PURCHASE_HEADERS);
   p.id = p.id || uid('b');
   p.date = p.date || nowIso();
+  p.updated = p.updated || nowIso();
   sh.appendRow(buildPurchaseRow(p));
   return { ok: true, purchase: p };
 }
@@ -376,6 +493,7 @@ function updatePurchase(p) {
   var merged = {};
   PURCHASE_HEADERS.forEach(function (h) { merged[h] = (p[h] !== undefined) ? p[h] : existing[h]; });
   merged.id = existing.id;
+  merged.updated = nowIso();
   sh.getRange(row, 1, 1, PURCHASE_HEADERS.length).setValues([buildPurchaseRow(merged)]);
   return { ok: true, purchase: merged };
 }
@@ -385,6 +503,7 @@ function deletePurchase(id) {
   var row = findRowById(sh, id);
   if (row < 0) throw new Error('ไม่พบรายการซื้อ');
   sh.deleteRow(row);
+  addTombstone('purchase', id);
   return { ok: true, id: id };
 }
 
@@ -443,17 +562,23 @@ function setSetting(key, value) {
  * ------------------------------------------------------------------ */
 
 function ensureImageFolder() {
+  // Test mode always uses its own folder so test uploads never land in the
+  // real store's image collection (even though settings were cloned from it).
+  var folderName = TEST_MODE ? FOLDER_NAME + ' (TEST)' : FOLDER_NAME;
   var cfg = getSettings();
-  if (cfg.imgFolderId) {
+  var folders = DriveApp.getFoldersByName(folderName);
+  if (folders.hasNext()) {
+    var folder = folders.next();
+    if (!TEST_MODE) setSetting('imgFolderId', folder.getId());
+    return folder;
+  }
+  if (!TEST_MODE && cfg.imgFolderId) {
     try { return DriveApp.getFolderById(cfg.imgFolderId); } catch (e) {}
   }
-  var folders = DriveApp.getFoldersByName(FOLDER_NAME);
-  var folder;
-  if (folders.hasNext()) folder = folders.next();
-  else folder = DriveApp.createFolder(FOLDER_NAME);
-  setSetting('imgFolderId', folder.getId());
-  tryShareFolder(folder);
-  return folder;
+  var created = DriveApp.createFolder(folderName);
+  setSetting('imgFolderId', created.getId());
+  tryShareFolder(created);
+  return created;
 }
 
 function tryShareFolder(folder) {

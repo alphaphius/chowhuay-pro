@@ -34,24 +34,13 @@ await new Promise((r) => (ws.onopen = r));
 await send('Runtime.enable');
 
 const expr = `(async () => {
-  const call = async (action, body={}) => {
-    const res = await fetch(window.Api.gasUrl() + "?action=" + encodeURIComponent(action) + "&u=" + Date.now(), {method:"POST", headers:{"Content-Type":"text/plain"}, body:JSON.stringify(body)});
-    return res.json();
-  };
-  let all = await call("getAll");
-  for (const s of all.sales) await call("sale:delete", {id:s.id});
-  all = await call("getAll");
-  for (const p of all.products) await call("product:delete", {id:p.id});
-  all = await call("getAll");
-  for (const p of all.purchases) await call("purchase:delete", {id:p.id});
-  all = await call("getAll");
-  for (const c of all.categories) await call("category:delete", {name:c});
-  await call("settings:set", {key:"passcode", value:"1234"});
-  await call("settings:set", {key:"storeName", value:"ร้านโชว์ห่วยของฉัน"});
-  await call("settings:set", {key:"theme", value:"blue"});
-  await call("settings:set", {key:"dark", value:"0"});
-  const f = await call("getAll");
-  return JSON.stringify({cleaned:true, products:f.products.length, sales:f.sales.length, purchases:f.purchases.length, categories:f.categories.length, settings:f.settings});
+  if (window.__TEST_MODE !== true) {
+    return JSON.stringify({ error: "REFUSED: window.__TEST_MODE is not true — refusing to touch a non-test backend" });
+  }
+  const f = await window.Api.call("getAll", {});
+  const before = { products: f.products.length, sales: f.sales.length, purchases: f.purchases.length, categories: f.categories.length, settings: f.settings };
+  const reset = await window.Api.call("test:reset", {});
+  return JSON.stringify({ cleaned: reset.reset === true, before });
 })()`;
 
 const r = await send('Runtime.evaluate', { expression: expr, awaitPromise: true, returnByValue: true });

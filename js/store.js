@@ -35,10 +35,23 @@
     } catch (e) { /* corrupted cache — ignore */ }
   }
 
-  function applySnapshot(data) {
+  function mergeDelta(current, incoming, deleted) {
+    const map = {};
+    current.forEach((r) => { map[String(r.id)] = r; });
+    (incoming || []).forEach((r) => { map[String(r.id)] = r; });
+    (deleted || []).forEach((id) => { delete map[String(id)]; });
+    return Object.keys(map).map((k) => map[k]);
+  }
+
+  function applySnapshot(data, delta) {
+    if (delta) {
+      S.sales = mergeDelta(S.sales, data.sales, data.deletedSales);
+      S.purchases = mergeDelta(S.purchases, data.purchases, data.deletedPurchases);
+    } else {
+      S.sales = data.sales || [];
+      S.purchases = data.purchases || [];
+    }
     S.products = data.products || [];
-    S.sales = data.sales || [];
-    S.purchases = data.purchases || [];
     S.categories = data.categories || [];
     S.settings = data.settings || {};
     S.syncedAt = data.syncedAt || new Date().toISOString();
@@ -47,8 +60,9 @@
   }
 
   function refresh() {
-    return Api.loadAll().then((data) => {
-      applySnapshot(data);
+    const since = S.syncedAt || null;
+    return Api.loadAll(since).then((data) => {
+      applySnapshot(data, !!since);
       return S;
     });
   }
