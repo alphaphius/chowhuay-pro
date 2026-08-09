@@ -187,6 +187,34 @@
       updateDots(dots);
     };
 
+    const status = document.getElementById('pin-status');
+    const setStatus = (t) => { if (status) status.textContent = t || ''; };
+
+    const retry = document.getElementById('pin-retry');
+    if (retry) retry.addEventListener('click', async () => {
+      retry.disabled = true;
+      setStatus('กำลังติดต่อฐานข้อมูล...');
+      await refreshSilent();
+      retry.disabled = false;
+      setStatus(Store.state.loaded ? '' : 'ติดต่อฐานข้อมูลไม่ได้ — ตรวจอินเทอร์เน็ต แล้วลองใหม่');
+    });
+
+    const reset = document.getElementById('pin-reset');
+    if (reset) reset.addEventListener('click', () => {
+      if (reset.dataset.arm !== '1') {
+        reset.dataset.arm = '1';
+        reset.textContent = 'แน่ใจ? กดอีกครั้ง';
+        setTimeout(() => { reset.dataset.arm = ''; reset.textContent = 'รีเซ็ตแอป'; }, 3000);
+        return;
+      }
+      try {
+        if (navigator.serviceWorker) navigator.serviceWorker.getRegistrations().then((rs) => rs.forEach((r) => r.unregister()));
+        if (window.caches) caches.keys().then((ks) => ks.forEach((k) => caches.delete(k)));
+      } catch (e) {}
+      Object.keys(localStorage).forEach((k) => { if (k.indexOf('ch_') === 0 && k !== 'ch_setup_v1') localStorage.removeItem(k); });
+      location.reload();
+    });
+
     // quick test via enter key on hidden input (desktop convenience)
     const quick = document.getElementById('pin-quick');
     if (quick) quick.addEventListener('keydown', (e) => {

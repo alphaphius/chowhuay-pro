@@ -417,7 +417,8 @@
     document.body.appendChild(root);
   }
 
-  // ---- barcode scanner ----  let scanCleanup = null;
+  // ---- barcode scanner ----
+  let scanCleanup = null;
   function openScanner(onCode) {
     if (scannerActive) return;
     const root = document.createElement('div');
