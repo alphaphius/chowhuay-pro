@@ -284,7 +284,7 @@ ul { list-style: none; }
   max-width: 1200px; margin: 0 auto;
 }
 @media (min-width: 768px) {
-  .app-main { padding-left: 96px; padding-right: var(--margin); padding-bottom: 48px; }
+  .app-main { padding-left: var(--margin); padding-right: var(--margin); padding-bottom: calc(var(--bottomnav-h) + 24px); }
 }
 
 .view { display: none; animation: fadeIn 0.2s ease; }
@@ -326,14 +326,8 @@ ul { list-style: none; }
 }
 .nav-item:active { transform: scale(0.92); }
 @media (min-width: 768px) {
-  .bottom-nav { display: none; }
-  .side-nav {
-    position: fixed; top: var(--topbar-h); bottom: 0; left: 0; z-index: 40;
-    width: 88px; background: var(--surface-container-lowest);
-    border-right: 1px solid var(--outline-variant);
-    display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 16px 8px;
-    overflow-y: auto;
-  }
+  .bottom-nav { max-width: 480px; left: 50%; transform: translateX(-50%); border-radius: 16px 16px 0 0; }
+  .side-nav { display: none; }
   .side-nav .nav-item { width: 72px; height: 64px; flex-direction: column; border-radius: var(--radius); }
   .side-nav .nav-item span:last-child { font-size: 10px; }
 }

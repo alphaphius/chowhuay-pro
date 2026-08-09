@@ -2,6 +2,22 @@
 (function (global) {
   'use strict';
 
+  // Self-heal: when the deployed bundle version changes, clear stale caches and
+  // reload once so installed PWAs never run an old bundle. Skipped in test mode.
+  (async function selfHeal() {
+    if (global.__TEST_MODE) return;
+    try {
+      const key = CONFIG.SETUP_KEY + ':v';
+      if (String(localStorage.getItem(key)) === String(CONFIG.BOOT_VERSION)) return;
+      localStorage.setItem(key, String(CONFIG.BOOT_VERSION));
+      if (window.caches && window.caches.keys) {
+        const keys = await window.caches.keys();
+        if (keys.length) await Promise.all(keys.map((c) => window.caches.delete(c)));
+      }
+      if (location.reload) location.reload();
+    } catch (e) { /* keep going */ }
+  })();
+
   let unlocked = false;
   let pin = '';
   const MAX_PIN = 4;
@@ -190,7 +206,16 @@
     });
   }
 
-  function verifyPin(dots) {
+  async function verifyPin(dots) {
+    // First boot: don't judge the PIN against a stale cache while the backend
+    // settings are still loading — wait (bounded) for the fresh passcode.
+    const firstSync = Api.isConfigured() && !Store.state.loaded && !Store.state.syncedAt;
+    if (firstSync) {
+      const t0 = Date.now();
+      while (!Store.state.loaded && Date.now() - t0 < 8000) {
+        await new Promise((r) => setTimeout(r, 150));
+      }
+    }
     const expected = (Store.state.settings && Store.state.settings.passcode) || Api.localPasscode();
     if (pin === String(expected)) {
       dots.forEach((d) => d.classList.add('success'));
