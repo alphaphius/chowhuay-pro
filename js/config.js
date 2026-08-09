@@ -3,10 +3,10 @@ window.CONFIG = {
   APP_VERSION: '1.0.0',
   // Bump when a deploy changes cacheable assets. App compares this against
   // localStorage and self-reloads once so stale PWAs pick up the new bundle.
-  BOOT_VERSION: 10,
+  BOOT_VERSION: 11,
   // ตั้งค่า URL ของ Google Apps Script Web App (จบด้วย /exec)
   // ตัวอย่าง: 'https://script.google.com/macros/s/AKfycb.../exec'
-  GAS_URL: 'https://script.google.com/macros/s/AKfycbzWEahwMPfSI4tzCFbeNrREVCGxPHslHCu7yF7lP-eX1Ushzf5E730N-kNc-rWLWxA8zQ/exec',
+  GAS_URL: 'https://script.google.com/macros/s/AKfycbwhCyCvUC2RNWJN_wSITsPAPAJSz5jKSoqEJrWq_8YIpy4nPzl475lM8shbpFkSKfg6kA/exec',
   // Script ID ของ Apps Script (ใช้สำหรับแนะนำ/ระบุโปรเจกต์เท่านั้น ไม่ใช่ URL)
   GAS_SCRIPT_ID: '1gJIXsjL0q8z2bbNxIpeUXI2Z9pECLUlGzZSemZtzeZMzc2gglJnQ-6n7',
   // ขนาดรูป thumbnail ที่โหลดจาก Google Drive (w320 = เบา/เร็ว)

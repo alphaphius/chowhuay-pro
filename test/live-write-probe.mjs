@@ -61,17 +61,17 @@ await new Promise((r) => setTimeout(r, 6000));
 
 const r = await send('Runtime.evaluate', {
   expression: `(async () => {
-    const url = 'https://script.google.com/macros/s/AKfycbzWEahwMPfSI4tzCFbeNrREVCGxPHslHCu7yF7lP-eX1Ushzf5E730N-kNc-rWLWxA8zQ/exec?action=' + encodeURIComponent('product:create');
+    const url = 'https://script.google.com/macros/s/AKfycbwhCyCvUC2RNWJN_wSITsPAPAJSz5jKSoqEJrWq_8YIpy4nPzl475lM8shbpFkSKfg6kA/exec?action=' + encodeURIComponent('product:create');
     const prod = { barcode: '8880000000009', name: 'ZZTEST-lobdai', category: 'test', unit: 'pcs', cost: 1, sell: 2, stock: 1, minStock: 0 };
     const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ product: prod }) });
     const created = await res.json();
     let out = { create: created };
     if (created && created.product && created.product.id) {
-      const url2 = 'https://script.google.com/macros/s/AKfycbzWEahwMPfSI4tzCFbeNrREVCGxPHslHCu7yF7lP-eX1Ushzf5E730N-kNc-rWLWxA8zQ/exec?action=' + encodeURIComponent('product:delete');
+      const url2 = 'https://script.google.com/macros/s/AKfycbwhCyCvUC2RNWJN_wSITsPAPAJSz5jKSoqEJrWq_8YIpy4nPzl475lM8shbpFkSKfg6kA/exec?action=' + encodeURIComponent('product:delete');
       const res2 = await fetch(url2, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ id: created.product.id }) });
       out.delete = await res2.json();
     }
-    const g = await fetch('https://script.google.com/macros/s/AKfycbzWEahwMPfSI4tzCFbeNrREVCGxPHslHCu7yF7lP-eX1Ushzf5E730N-kNc-rWLWxA8zQ/exec?action=getAll', { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({}) });
+    const g = await fetch('https://script.google.com/macros/s/AKfycbwhCyCvUC2RNWJN_wSITsPAPAJSz5jKSoqEJrWq_8YIpy4nPzl475lM8shbpFkSKfg6kA/exec?action=getAll', { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({}) });
     const all = await g.json();
     out.counts = { products: all.products ? all.products.length : null };
     return JSON.stringify(out);
