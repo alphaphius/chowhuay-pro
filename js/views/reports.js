@@ -45,8 +45,8 @@
           <p class="caption">สรุปผลประกอบการและประวัติการขาย</p>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
-          <button class="btn btn-outline btn-sm" id="r-pdf">${UI.icon('description')} Export PDF</button>
-          <button class="btn btn-tonal btn-sm" id="r-excel">${UI.icon('table')} Export Excel</button>
+          <button class="btn btn-outline btn-sm" id="r-pdf">${UI.icon('description')} ส่งออก PDF</button>
+          <button class="btn btn-tonal btn-sm" id="r-excel">${UI.icon('table')} ส่งออก Excel</button>
         </div>
       </div>
 
@@ -101,7 +101,7 @@
               <tbody>${tx.map((t) => txRow(t)).join('')}</tbody>
             </table>
           </div>
-        ` : '<div class="empty-state"><span class="material-symbols-outlined">receipt_long</span><p>ไม่มีรายการในช่วงนี้</p></div>'}
+        ` : '<div class="empty-state"><span class="material-symbols-outlined" aria-hidden="true">receipt_long</span><p>ไม่มีรายการในช่วงนี้</p></div>'}
       </div>
       <div style="height:16px;"></div>
     `;
@@ -131,10 +131,10 @@
 
   function txRow(t) {
     const detailBtn = t.kind === 'sale'
-      ? `<button class="btn-icon" data-sview="${U.esc(t.sale.id)}">${UI.icon('visibility')}</button>
-         <button class="btn-icon" data-sdel="${U.esc(t.sale.id)}">${UI.icon('delete', 'text-error')}</button>`
-      : `<button class="btn-icon" data-pedit="${U.esc(t.id)}">${UI.icon('edit')}</button>
-         <button class="btn-icon" data-pdel="${U.esc(t.id)}">${UI.icon('delete', 'text-error')}</button>`;
+      ? `<button class="btn-icon" data-sview="${U.esc(t.sale.id)}" aria-label="ดูรายละเอียดการขาย">${UI.icon('visibility')}</button>
+         <button class="btn-icon" data-sdel="${U.esc(t.sale.id)}" aria-label="ลบรายการขาย">${UI.icon('delete', 'text-error')}</button>`
+      : `<button class="btn-icon" data-pedit="${U.esc(t.id)}" aria-label="แก้ไขรายการต้นทุน">${UI.icon('edit')}</button>
+         <button class="btn-icon" data-pdel="${U.esc(t.id)}" aria-label="ลบรายการต้นทุน">${UI.icon('delete', 'text-error')}</button>`;
     return `
       <tr>
         <td style="white-space:nowrap;">${U.fmtDate(t.date)}<br><span class="caption">${U.fmtTime(t.date)}</span></td>
@@ -147,7 +147,7 @@
 
   function renderBestTable(from, to) {
     const best = Store.bestSellers(from, to, 10);
-    if (!best.length) return '<div class="empty-state"><span class="material-symbols-outlined">emoji_events</span><p>ยังไม่มีข้อมูลขาย</p></div>';
+    if (!best.length) return '<div class="empty-state"><span class="material-symbols-outlined" aria-hidden="true">emoji_events</span><p>ยังไม่มีข้อมูลขาย</p></div>';
     return `
       <div class="table-wrap">
         <table class="table">

@@ -40,7 +40,9 @@
 
   async function boot() {
     for (let i = 0; i < 100 && !(window.Store && window.Store.state && window.App && typeof window.enterPin === 'function'); i++) await wait(100);
-    await until(() => window.Store.state.loaded === true, 25000);
+  }
+
+  async function ensureSeedProduct() {
     if (!byBarcode(8851888041847)) {
       await window.Api.product.create({
         barcode: 8851888041847,
@@ -54,12 +56,21 @@
       });
       await window.Store.refresh();
     }
+    const seed = byBarcode(8851888041847);
+    const delta = 3 - Number(seed.stock || 0);
+    if (delta) {
+      await window.Api.product.adjust(seed.id, delta);
+      await window.Store.refresh();
+    }
   }
 
   async function unlock() {
-    const expected = String(window.Store.state.settings.passcode || window.Api.localPasscode() || '1234');
+    const expected = String(window.__TEST_PIN || '1234');
     expected.split('').forEach((d) => window.enterPin(Number(d)));
-    await until(() => !document.getElementById('passcode-overlay').classList.contains('hidden'), 10000);
+    const opened = await until(() => document.getElementById('passcode-overlay').classList.contains('hidden'), 30000);
+    if (!opened) throw new Error('PIN unlock timed out');
+    await until(() => window.Store.state.loaded === true, 30000);
+    await ensureSeedProduct();
   }
 
   function setVal(sel, v) {
@@ -75,7 +86,7 @@
   }
 
   function closeModalIfOpen() {
-    const m = document.querySelector('.modal-sheet [data-mclose]');
+    const m = document.querySelector('.modal-sheet [data-scan-close], .modal-sheet [data-mclose]');
     if (m) m.click();
   }
 
@@ -141,8 +152,13 @@
       pass.value = '9999';
       pass.dispatchEvent(new Event('input', { bubbles: true }));
       document.getElementById('s-save-pass').click();
-      await until(() => window.Api.localPasscode() === '9999', 20000);
-      ok('passcode saved: ' + (window.Api.localPasscode() === '9999'));
+      let passSaved = false;
+      for (let i = 0; i < 40 && !passSaved; i++) {
+        await wait(500);
+        passSaved = await window.Api.auth.verifyRememberedPin('9999');
+      }
+      if (passSaved) ok('passcode saved securely: true');
+      else bad('passcode hash was not updated');
     } else bad('pass input missing');
 
     const notify = document.getElementById('s-notify');
@@ -179,6 +195,7 @@
     const salesBefore = window.Store.state.sales.length;
     await until(() => window.Store.state.sales.length > salesBefore, 30000);
     const sale = window.Store.state.sales[window.Store.state.sales.length - 1];
+    window.__createdSaleId = sale.id;
     ok('sale created: code=' + sale.code + ' discount=' + sale.discount + ' total=' + sale.total + ' cash=' + sale.cashReceived + ' change=' + sale.change);
     const sOk = sale.discount === 5 && sale.total === 20 && sale.cashReceived === 50 && sale.change === 30;
     if (sOk) ok('discount/cash math correct (25-5=20, 50-20=30)'); else bad('discount math wrong', JSON.stringify(sale));
@@ -282,10 +299,12 @@
     await wait(900);
     await until(() => document.querySelector('[data-sdel]'), 15000);
     const stockBeforeDel = byBarcode(8851888041847).stock;
-    document.querySelector('[data-sdel]').click();
+    const createdSaleDelete = document.querySelector('[data-sdel="' + window.__createdSaleId + '"]');
+    if (!createdSaleDelete) throw new Error('created sale delete button missing');
+    createdSaleDelete.click();
     await wait(500);
     confirmDelete();
-    await until(() => window.Store.state.sales.length === 0, 30000);
+    await until(() => !window.Store.state.sales.some((s) => s.id === window.__createdSaleId), 30000);
     const stockAfterDel = byBarcode(8851888041847).stock;
     ok('sale deleted, stock restored ' + stockBeforeDel + '->' + stockAfterDel + ': ' + (stockAfterDel === stockBeforeDel + 1));
 

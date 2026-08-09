@@ -15,7 +15,9 @@
  * (avoids CORS preflight). JSON payload in the body, action in ?action=
  */
 
-var SCRIPT_VER = '1.1.0';
+var SCRIPT_VER = '1.2.0';
+var SESSION_TTL_SECONDS = 21600;
+var MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
 var SHEET_PRODUCTS = 'Products';
 var SHEET_SALES = 'Sales';
@@ -61,19 +63,27 @@ function doPost(e) {
 }
 
 function route(action, params, body) {
-  TEST_MODE = !!(params && params.sheet === 'test');
+  var wantsTest = !!(params && params.sheet === 'test');
+  TEST_MODE = false;
   try {
-    var result = handle(action, params, body);
+    if (action === 'ping') return jsonOk(handle(action, params, body));
+    if (action === 'auth:login') return jsonOk(authLogin(body && body.pin));
+    requireAuth(params, body);
+    TEST_MODE = wantsTest;
+    var result = isMutationAction(action)
+      ? withScriptLock(function () { return handle(action, params, body); })
+      : handle(action, params, body);
     return jsonOk(result);
   } catch (err) {
     Logger.log('route error: %s %s', action, err.stack || err);
-    return jsonErr(String(err.message || err));
+    return jsonErr(String(err.message || err), err.code || 'API_ERROR');
   }
 }
 
 function handle(action, params, body) {
   switch (action) {
-    case 'ping': return { ok: true, ver: SCRIPT_VER, time: new Date().toISOString(), sheets: getSS().getSheets().map(function (s) { return s.getName(); }) };
+    case 'ping': return { ok: true, ver: SCRIPT_VER, time: new Date().toISOString(), authRequired: true };
+    case 'auth:logout': return authLogout(body && body.token);
     case 'init': return initSheets();
     case 'getAll': return getAll(body.since);
     case 'test:reset': return testReset();
@@ -88,14 +98,91 @@ function handle(action, params, body) {
     case 'purchase:delete': return deletePurchase(body.id);
     case 'category:create': return createCategory(body.name);
     case 'category:delete': return deleteCategory(body.name);
-    case 'settings:get': return { settings: getSettings() };
-    case 'settings:set': return setSetting(body.key, body.value);
+    case 'settings:get': return { settings: safeSettings(getSettings()) };
+    case 'settings:set': return setPublicSetting(body.key, body.value);
     case 'image:upload': return uploadImage(body.b64, body.filename);
     case 'image:delete': return deleteImage(body.id);
     case 'image:repairShare': return repairImageSharing();
-    default:
-      return { ok: true, msg: 'unknown action', action: action };
+    default: throw appError('UNKNOWN_ACTION', 'ไม่รู้จักคำสั่งที่ร้องขอ');
   }
+}
+
+function appError(code, message) {
+  var err = new Error(message);
+  err.code = code;
+  return err;
+}
+
+function authLogin(pin) {
+  pin = String(pin || '');
+  if (!/^\d{4}$/.test(pin)) throw appError('INVALID_PIN', 'รหัสผ่านไม่ถูกต้อง');
+  var props = PropertiesService.getScriptProperties();
+  var propKey = 'PIN_HASH';
+  var stored = props.getProperty(propKey);
+  var cfg = getSettings();
+  if (stored) {
+    var parts = stored.split(':');
+    if (parts.length !== 2 || pinDigest(pin, parts[0]) !== parts[1]) {
+      throw appError('INVALID_PIN', 'รหัสผ่านไม่ถูกต้อง');
+    }
+  } else {
+    var expected = String(cfg.passcode || '1234');
+    if (pin !== expected) throw appError('INVALID_PIN', 'รหัสผ่านไม่ถูกต้อง');
+    storePinHash(pin, propKey);
+    removeSetting('passcode');
+  }
+  var token = Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '');
+  CacheService.getScriptCache().put('session:' + token, '1', SESSION_TTL_SECONDS);
+  return { ok: true, token: token, expiresIn: SESSION_TTL_SECONDS, settings: safeSettings(cfg) };
+}
+
+function pinDigest(pin, salt) {
+  var bytes = Utilities.computeDigest(
+    Utilities.DigestAlgorithm.SHA_256,
+    'chowhuay-pro:' + String(salt) + ':' + String(pin),
+    Utilities.Charset.UTF_8
+  );
+  return bytes.map(function (b) { return ('0' + ((b + 256) % 256).toString(16)).slice(-2); }).join('');
+}
+
+function storePinHash(pin, key) {
+  var salt = Utilities.getUuid().replace(/-/g, '');
+  PropertiesService.getScriptProperties().setProperty(key || 'PIN_HASH', salt + ':' + pinDigest(pin, salt));
+}
+
+function authLogout(token) {
+  if (token) CacheService.getScriptCache().remove('session:' + String(token));
+  return { ok: true };
+}
+
+function requireAuth(params, body) {
+  var token = (body && body.token) || (params && params.token) || '';
+  if (!token || CacheService.getScriptCache().get('session:' + String(token)) !== '1') {
+    throw appError('AUTH_REQUIRED', 'เซสชันหมดอายุ กรุณาใส่รหัสผ่านอีกครั้ง');
+  }
+}
+
+function safeSettings(cfg) {
+  var out = {};
+  Object.keys(cfg || {}).forEach(function (key) {
+    if (key !== 'passcode' && key !== 'imgFolderId') out[key] = cfg[key];
+  });
+  return out;
+}
+
+function isMutationAction(action) {
+  return [
+    'init', 'test:reset', 'product:create', 'product:update', 'product:delete',
+    'product:adjust', 'sale:create', 'sale:delete', 'purchase:create',
+    'purchase:update', 'purchase:delete', 'category:create', 'category:delete',
+    'settings:set', 'image:delete', 'image:repairShare'
+  ].indexOf(action) >= 0;
+}
+
+function withScriptLock(fn) {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) throw appError('BUSY', 'ระบบกำลังบันทึกรายการอื่น กรุณาลองอีกครั้ง');
+  try { return fn(); } finally { lock.releaseLock(); }
 }
 
 /* ------------------------------------------------------------------ *
@@ -131,6 +218,7 @@ function ensureTestSS() {
 function testReset() {
   if (!TEST_MODE) throw new Error('test:reset only allowed in test mode');
   var props = PropertiesService.getScriptProperties();
+  props.deleteProperty('TEST_PIN_HASH');
   var id = props.getProperty('TEST_SS_ID');
   if (id) {
     try {
@@ -142,7 +230,8 @@ function testReset() {
     var folders = DriveApp.getFoldersByName(FOLDER_NAME + ' (TEST)');
     if (folders.hasNext()) {
       var f = folders.next();
-      f.getFiles().forEach(function (file) { file.setTrashed(true); });
+      var files = f.getFiles();
+      while (files.hasNext()) files.next().setTrashed(true);
       f.setTrashed(true);
     }
   } catch (e) { Logger.log('test folder cleanup failed: %s', e.message); }
@@ -173,7 +262,6 @@ function initSheets() {
   ensureColumns();
   var cfg = getSettings();
   if (!cfg.storeName) setSetting('storeName', 'ร้านโชว์ห่วยของฉัน');
-  if (!cfg.passcode) setSetting('passcode', '1234');
   if (!cfg.theme) setSetting('theme', 'blue');
   ensureImageFolder();
   return { ok: true, msg: 'sheets ready' };
@@ -247,8 +335,7 @@ function isBlank(v) {
 function getAll(since) {
   ensureColumns();
   var categories = tableToObjects(sheet(SHEET_CATEGORIES, CATEGORY_HEADERS)).map(function (r) { return r.name; });
-  var settings = getSettings();
-  ensureImageFolder();
+  var settings = safeSettings(getSettings());
   var sales = tableToObjects(sheet(SHEET_SALES, SALE_HEADERS));
   var purchases = tableToObjects(sheet(SHEET_PURCHASES, PURCHASE_HEADERS));
   var sinceT = since ? new Date(since).getTime() : null;
@@ -319,7 +406,7 @@ function assertUniqueBarcode(sh, barcode, excludeId) {
 }
 
 function createProduct(p) {
-  if (isBlank(p.name)) throw new Error('ต้องระบุชื่อสินค้า');
+  validateProduct(p);
   var sh = sheet(SHEET_PRODUCTS, PRODUCT_HEADERS);
   assertUniqueBarcode(sh, p.barcode, null);
   var id = p.id || uid('p');
@@ -331,6 +418,7 @@ function createProduct(p) {
 }
 
 function updateProduct(p) {
+  validateProduct(p);
   var sh = sheet(SHEET_PRODUCTS, PRODUCT_HEADERS);
   var row = findRowById(sh, p.id);
   if (row < 0) throw new Error('ไม่พบสินค้า #' + p.id);
@@ -361,11 +449,20 @@ function adjustStock(id, delta) {
   var row = findRowById(sh, id);
   if (row < 0) throw new Error('ไม่พบสินค้า');
   var current = num(sh.getRange(row, 8).getValue());
-  var next = current + num(delta);
+  var change = num(delta);
+  if (!isFinite(change) || change === 0) throw new Error('จำนวนปรับสต็อกไม่ถูกต้อง');
+  var next = current + change;
   if (next < 0) throw new Error('สต็อกไม่พอ (' + current + ' ชิ้น)');
   sh.getRange(row, 8).setValue(next);
   sh.getRange(row, 12).setValue(nowIso());
   return { ok: true, stock: next };
+}
+
+function validateProduct(p) {
+  if (isBlank(p.name)) throw new Error('ต้องระบุชื่อสินค้า');
+  ['cost', 'sell', 'stock', 'minStock'].forEach(function (key) {
+    if (p[key] !== undefined && num(p[key]) < 0) throw new Error('ค่า ' + key + ' ต้องไม่ติดลบ');
+  });
 }
 
 /* ------------------------------------------------------------------ *
@@ -391,7 +488,7 @@ function createSale(sale) {
     if (qty > stock) throw new Error('สต็อกไม่พอ: ' + prod.name + ' (เหลือ ' + stock + ')');
     var line = {
       id: prod.id, name: prod.name, unit: prod.unit || '',
-      qty: qty, cost: num(prod.cost), sell: num(it.sell || prod.sell || 0)
+      qty: qty, cost: num(prod.cost), sell: num(prod.sell)
     };
     subtotal += line.sell * qty;
     totalCost += line.cost * qty;
@@ -399,11 +496,13 @@ function createSale(sale) {
   });
 
   var discount = num(sale.discount);
-  if (discount > subtotal) discount = subtotal;
+  if (discount < 0 || discount > subtotal) throw new Error('ส่วนลดต้องอยู่ระหว่าง 0 ถึงยอดรวม');
   var total = Math.max(0, subtotal - discount);
   var profit = total - totalCost;
   var payment = sale.payment || 'cash';
+  if (['cash', 'promptpay', 'card'].indexOf(payment) < 0) throw new Error('วิธีชำระเงินไม่ถูกต้อง');
   var cashReceived = num(sale.cashReceived);
+  if (payment === 'cash' && cashReceived < total) throw new Error('จำนวนเงินที่รับมายังไม่ครบ');
   var change = payment === 'cash' && cashReceived > total ? cashReceived - total : 0;
 
   // Decrement stock
@@ -478,6 +577,7 @@ function buildPurchaseRow(p) {
 }
 
 function createPurchase(p) {
+  validatePurchase(p);
   var sh = sheet(SHEET_PURCHASES, PURCHASE_HEADERS);
   p.id = p.id || uid('b');
   p.date = p.date || nowIso();
@@ -487,6 +587,7 @@ function createPurchase(p) {
 }
 
 function updatePurchase(p) {
+  validatePurchase(p);
   var sh = sheet(SHEET_PURCHASES, PURCHASE_HEADERS);
   var row = findRowById(sh, p.id);
   if (row < 0) throw new Error('ไม่พบรายการซื้อ');
@@ -497,6 +598,11 @@ function updatePurchase(p) {
   merged.updated = nowIso();
   sh.getRange(row, 1, 1, PURCHASE_HEADERS.length).setValues([buildPurchaseRow(merged)]);
   return { ok: true, purchase: merged };
+}
+
+function validatePurchase(p) {
+  if (p.total !== undefined && num(p.total) < 0) throw new Error('ต้นทุนต้องไม่ติดลบ');
+  if (p.date && isNaN(new Date(p.date).getTime())) throw new Error('วันที่ไม่ถูกต้อง');
 }
 
 function deletePurchase(id) {
@@ -544,6 +650,23 @@ function getSettings() {
   return out;
 }
 
+function setPublicSetting(key, value) {
+  var allowed = ['storeName', 'theme', 'dark', 'passcode'];
+  if (allowed.indexOf(String(key)) < 0) throw appError('INVALID_SETTING', 'ไม่อนุญาตให้แก้ไขการตั้งค่านี้');
+  if (key === 'passcode' && !/^\d{4}$/.test(String(value || ''))) {
+    throw new Error('รหัสผ่านต้องเป็นตัวเลข 4 หลัก');
+  }
+  if (key === 'storeName' && (isBlank(value) || String(value).length > 100)) {
+    throw new Error('ชื่อร้านต้องมี 1-100 ตัวอักษร');
+  }
+  if (key === 'passcode') {
+    storePinHash(String(value), TEST_MODE ? 'TEST_PIN_HASH' : 'PIN_HASH');
+    removeSetting('passcode');
+    return { ok: true, key: key };
+  }
+  return setSetting(key, value);
+}
+
 function setSetting(key, value) {
   var sh = sheet(SHEET_SETTINGS, SETTING_HEADERS);
   var values = sh.getDataRange().getValues();
@@ -556,6 +679,14 @@ function setSetting(key, value) {
   }
   if (!found) sh.appendRow([key, value]);
   return { ok: true, key: key, value: value };
+}
+
+function removeSetting(key) {
+  var sh = sheet(SHEET_SETTINGS, SETTING_HEADERS);
+  var values = sh.getDataRange().getValues();
+  for (var r = values.length - 1; r >= 1; r--) {
+    if (String(values[r][0]) === String(key)) sh.deleteRow(r + 1);
+  }
 }
 
 /* ------------------------------------------------------------------ *
@@ -601,10 +732,17 @@ function tryShareFolder(folder) {
 
 function uploadImage(b64, filename) {
   if (isBlank(b64)) throw new Error('ไม่มีข้อมูลรูปภาพ');
+  var raw = String(b64);
+  var mimeMatch = raw.match(/^data:(image\/(?:jpeg|png|webp));base64,/i);
+  if (!mimeMatch) throw new Error('รองรับเฉพาะรูป JPEG, PNG หรือ WebP');
+  var mime = mimeMatch[1].toLowerCase();
+  var payload = raw.split(',')[1] || '';
+  if (payload.length > Math.ceil(MAX_IMAGE_BYTES * 4 / 3) + 16) throw new Error('รูปภาพมีขนาดใหญ่เกิน 5 MB');
   var folder = ensureImageFolder();
-  var name = (filename || 'img_' + uid('i') + '.jpg');
-  var bytes = Utilities.base64Decode(String(b64).split(',')[1] || String(b64));
-  var blob = Utilities.newBlob(bytes, 'image/jpeg', name);
+  var name = String(filename || 'img_' + uid('i') + '.jpg').replace(/[^A-Za-z0-9._-]/g, '_').slice(0, 120);
+  var bytes = Utilities.base64Decode(payload);
+  if (bytes.length > MAX_IMAGE_BYTES) throw new Error('รูปภาพมีขนาดใหญ่เกิน 5 MB');
+  var blob = Utilities.newBlob(bytes, mime, name);
   var file = folder.createFile(blob);
   var id = file.getId();
   shareFilePublic(file);
@@ -672,6 +810,6 @@ function jsonOk(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
 }
 
-function jsonErr(msg) {
-  return ContentService.createTextOutput(JSON.stringify({ ok: false, error: msg })).setMimeType(ContentService.MimeType.JSON);
+function jsonErr(msg, code) {
+  return ContentService.createTextOutput(JSON.stringify({ ok: false, code: code || 'API_ERROR', error: msg })).setMimeType(ContentService.MimeType.JSON);
 }

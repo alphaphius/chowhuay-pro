@@ -13,6 +13,7 @@
   };
 
   function persist() {
+    if (S.settings && Object.prototype.hasOwnProperty.call(S.settings, 'passcode')) delete S.settings.passcode;
     try {
       localStorage.setItem(CONFIG.STORAGE_KEY, JSON.stringify({
         products: S.products, sales: S.sales, purchases: S.purchases,
@@ -31,6 +32,10 @@
       S.purchases = d.purchases || [];
       S.categories = d.categories || [];
       S.settings = d.settings || {};
+      if (Object.prototype.hasOwnProperty.call(S.settings, 'passcode')) {
+        delete S.settings.passcode;
+        persist();
+      }
       S.syncedAt = d.syncedAt || null;
     } catch (e) { /* corrupted cache — ignore */ }
   }

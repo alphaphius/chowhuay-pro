@@ -19,7 +19,9 @@ const ROOT = join(__dirname, '..');
 
 const args = process.argv.slice(2);
 const scenario = (args.find((a) => a.startsWith('--scenario=')) || '--scenario=full').split('=')[1];
-const PORT = 8765;
+const TEST_PIN = process.env.CHOWHUAY_TEST_PIN || '1234';
+const GAS_URL_OVERRIDE = process.env.CHOWHUAY_GAS_URL || '';
+const PORT = Number(process.env.CHOWHUAY_TEST_PORT || 8765);
 const CDP = 'http://127.0.0.1:9222';
 const URL = `http://localhost:${PORT}/index.test.html`;
 const DL = '/tmp/chowhuay-dl';
@@ -29,7 +31,7 @@ mkdirSync(DL, { recursive: true });
 // --- 1. generate test page ---------------------------------------------------
 const driver = readFileSync(join(__dirname, 'driver.js'), 'utf8');
 let html = readFileSync(join(ROOT, 'index.html'), 'utf8');
-html = html.replace('</body>', `<script>window.__SCENARIO='${scenario}';window.__TEST_MODE=true;</script>\n<script>${driver}</script>\n</body>`);
+html = html.replace('</body>', `<script>window.__SCENARIO=${JSON.stringify(scenario)};window.__TEST_PIN=${JSON.stringify(TEST_PIN)};window.__TEST_MODE=true;if(${JSON.stringify(GAS_URL_OVERRIDE)})window.CONFIG.GAS_URL=${JSON.stringify(GAS_URL_OVERRIDE)};</script>\n<script>${driver}</script>\n</body>`);
 mkdirSync(join(__dirname, 'test'), { recursive: true });
 writeFileSync(join(ROOT, 'index.test.html'), html);
 console.log(`[1/4] generated index.test.html (scenario=${scenario})`);

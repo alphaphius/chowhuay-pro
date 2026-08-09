@@ -59,7 +59,7 @@
             </div>
             ${list.map((p, i) => productRow(p, i)).join('')}
           </div>
-        ` : `<div class="empty-state"><span class="material-symbols-outlined">inventory_2</span><p>ไม่พบสินค้า${list.length ? '' : ''}</p></div>`}
+        ` : `<div class="empty-state"><span class="material-symbols-outlined" aria-hidden="true">inventory_2</span><p>ไม่พบสินค้า${list.length ? '' : ''}</p></div>`}
         </div>
       `;
       pane.querySelector('#inv-search').addEventListener('input', (e) => { q = e.target.value; renderPane(container); });
@@ -92,12 +92,12 @@
                 <div style="text-align:right;">
                   <div class="price-sm">${U.fmtMoney(p.total)}</div>
                   <div class="flex gap-sm" style="justify-content:flex-end;">
-                    <button class="btn-icon" data-bedit="${U.esc(p.id)}">${UI.icon('edit')}</button>
-                    <button class="btn-icon" data-bdel="${U.esc(p.id)}">${UI.icon('delete', 'text-error')}</button>
+                    <button class="btn-icon" data-bedit="${U.esc(p.id)}" aria-label="แก้ไข ${U.esc(p.description || 'รายการต้นทุน')}">${UI.icon('edit')}</button>
+                    <button class="btn-icon" data-bdel="${U.esc(p.id)}" aria-label="ลบ ${U.esc(p.description || 'รายการต้นทุน')}">${UI.icon('delete', 'text-error')}</button>
                   </div>
                 </div>
               </div>`).join('')
-            : '<div class="empty-state"><span class="material-symbols-outlined">receipt_long</span><p>ยังไม่มีรายการทุนรวม</p></div>'}
+            : '<div class="empty-state"><span class="material-symbols-outlined" aria-hidden="true">receipt_long</span><p>ยังไม่มีรายการทุนรวม</p></div>'}
           </div>
         </div>
       `;
@@ -129,8 +129,8 @@
         </div>
         <div class="caption" style="text-align:right;min-width:70px;">ต้นทุน <b class="text-primary">${U.fmtMoney(p.cost)}</b><br>ขาย <b>${U.fmtMoney(p.sell)}</b></div>
         <div style="display:flex;gap:4px;">
-          <button class="btn-icon" data-edit="${U.esc(p.id)}">${UI.icon('edit')}</button>
-          <button class="btn-icon" data-del="${U.esc(p.id)}">${UI.icon('delete', 'text-error')}</button>
+          <button class="btn-icon" data-edit="${U.esc(p.id)}" aria-label="แก้ไข ${U.esc(p.name)}">${UI.icon('edit')}</button>
+          <button class="btn-icon" data-del="${U.esc(p.id)}" aria-label="ลบ ${U.esc(p.name)}">${UI.icon('delete', 'text-error')}</button>
         </div>
       </div>`;
   }
@@ -197,7 +197,7 @@
           <label>บาร์โค้ด</label>
           <div class="input-group">
             <input class="input grow" id="f-barcode" type="text" value="${p ? U.esc(p.barcode || '') : ''}" placeholder="สแกนหรือพิมพ์">
-            <button class="btn btn-primary" style="width:48px;height:48px;padding:0;" id="f-scan">${UI.icon('barcode_scanner')}</button>
+            <button class="btn btn-primary" style="width:48px;height:48px;padding:0;" id="f-scan" aria-label="สแกนบาร์โค้ดสินค้า">${UI.icon('barcode_scanner')}</button>
           </div>
         </div>
         <div class="field">
@@ -209,7 +209,7 @@
           <div class="input-group">
             <input class="input grow" id="f-cat" type="text" list="cat-list" value="${p ? U.esc(p.category || '') : ''}" placeholder="เลือกหรือพิมพ์ใหม่">
             <datalist id="cat-list">${cats.map((c) => `<option value="${U.esc(c)}">`).join('')}</datalist>
-            <button class="btn btn-outline" id="f-cat-add" title="เพิ่มหมวดหมู่ใหม่">${UI.icon('add')}</button>
+            <button class="btn btn-outline" id="f-cat-add" title="เพิ่มหมวดหมู่ใหม่" aria-label="เพิ่มหมวดหมู่ใหม่">${UI.icon('add')}</button>
           </div>
         </div>
         <div class="field">

@@ -41,7 +41,7 @@
           <div class="caption">ขาย ${U.fmtInt(b.qty)} ชิ้น · รายได้ ${U.fmtMoney(b.revenue)}</div>
           <div class="price-sm text-primary">${U.fmtMoney(b.revenue)}</div>
         </div>`).join('')
-      : '<div class="empty-state col-span-2"><span class="material-symbols-outlined">shopping_bag</span><p>ยังไม่มีรายการขายวันนี้</p></div>';
+      : '<div class="empty-state col-span-2"><span class="material-symbols-outlined" aria-hidden="true">shopping_bag</span><p>ยังไม่มีรายการขายวันนี้</p></div>';
 
     const lowHtml = low.length
       ? low.map((p) => `
@@ -53,7 +53,7 @@
           </div>
           <button class="btn btn-primary btn-sm" data-act="restock" data-id="${U.esc(p.id)}">เติมสต็อก</button>
         </div>`).join('')
-      : '<div class="empty-state"><span class="material-symbols-outlined">verified</span><p>สต็อกครบ ไม่มีของใกล้หมด</p></div>';
+      : '<div class="empty-state"><span class="material-symbols-outlined" aria-hidden="true">verified</span><p>สต็อกครบ ไม่มีของใกล้หมด</p></div>';
 
     const slowHtml = slow.length
       ? slow.map((p) => `
@@ -63,11 +63,15 @@
             <div class="title truncate">${U.esc(p.name)}</div>
             <div class="caption">ค้างสต็อก ${U.fmtInt(p.stock)} ${U.esc(p.unit || 'ชิ้น')} · 30 วัน</div>
           </div>
-          <button class="btn btn-outline btn-sm" data-act="restock" data-id="${U.esc(p.id)}">เติมสต็อก</button>
+          <button class="btn btn-outline btn-sm" data-route="inventory">ดูในสต็อก</button>
         </div>`).join('')
-      : '<div class="empty-state"><span class="material-symbols-outlined">task_alt</span><p>สินค้าทั้งหมดเคลื่อนไหวปกติ</p></div>';
+      : '<div class="empty-state"><span class="material-symbols-outlined" aria-hidden="true">task_alt</span><p>สินค้าทั้งหมดเคลื่อนไหวปกติ</p></div>';
 
     container.innerHTML = `
+      <div class="dashboard-head mb">
+        <div><h1 class="h2">ภาพรวมวันนี้</h1><p class="caption">${today.toLocaleDateString('th-TH', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</p></div>
+        <button class="btn btn-primary" data-route="pos">${UI.icon('point_of_sale')} เริ่มขาย</button>
+      </div>
       <!-- Stats -->
       <div class="grid-2 mb">
         <div class="card card-body stat-card">
@@ -112,7 +116,7 @@
       <div class="card card-body mb">
         <div class="section-title">
           <h3 class="h3">ยอดขายรายสัปดาห์</h3>
-          <span class="caption">จ. – อา. สัปดาห์นี้</span>
+          <span class="caption">จ.-อา. สัปดาห์นี้</span>
         </div>
         <div class="chart-box"><canvas id="weekly-chart"></canvas></div>
       </div>
@@ -143,19 +147,22 @@
       <div style="height:16px;"></div>
     `;
 
-    // wire restock actions
-    container.addEventListener('click', (e) => {
-      const btn = e.target.closest('[data-act="restock"]');
-      if (btn) {
-        e.stopPropagation();
-        const id = btn.dataset.id;
-        const prod = Store.productById(id);
-        if (prod) {
-          const ev = new CustomEvent('app:restock', { detail: prod });
-          document.dispatchEvent(ev);
+    // wire restock actions once; render replaces only the inner content.
+    if (!container.__wired) {
+      container.__wired = true;
+      container.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-act="restock"]');
+        if (btn) {
+          e.stopPropagation();
+          const id = btn.dataset.id;
+          const prod = Store.productById(id);
+          if (prod) {
+            const ev = new CustomEvent('app:restock', { detail: prod });
+            document.dispatchEvent(ev);
+          }
         }
-      }
-    });
+      });
+    }
 
     renderChart(week);
   }

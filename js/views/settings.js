@@ -5,11 +5,11 @@
   let testing = false;
 
   const THEMES = [
-    { id: 'blue', label: 'Merchant Blue', color: '#003d9b' },
-    { id: 'green', label: 'Eco Green', color: '#006a3d' },
-    { id: 'orange', label: 'Sunset Orange', color: '#9a3412' },
-    { id: 'purple', label: 'Deep Purple', color: '#6d28d9' },
-    { id: 'brown', label: 'Creamy Brown', color: '#5d4037' }
+    { id: 'blue', label: 'น้ำเงินร้านค้า', color: '#003d9b' },
+    { id: 'green', label: 'เขียวสด', color: '#006a3d' },
+    { id: 'orange', label: 'ส้มอบอุ่น', color: '#9a3412' },
+    { id: 'purple', label: 'ม่วงเข้ม', color: '#6d28d9' },
+    { id: 'brown', label: 'น้ำตาลนุ่ม', color: '#5d4037' }
   ];
 
   function render(container) {
@@ -30,14 +30,14 @@
             ? `<div class="mb-sm" style="display:flex;align-items:center;gap:8px;">${UI.badge('success', 'เชื่อมต่อแล้ว')}<span class="caption" style="word-break:break-all;min-width:0;">${U.esc(Api.gasUrl())}</span></div>`
             : `<div class="mb-sm">${UI.badge('warning', 'ยังไม่ได้ตั้งค่า')}</div>`}
           <div class="field">
-            <label>URL ของ Web App (/exec)</label>
-            <input class="input" id="s-url" type="text" value="${U.esc(Api.gasUrl())}" placeholder="https://script.google.com/macros/s/.../exec">
+            <label for="s-url">URL ของ Web App (ลงท้ายด้วย /exec)</label>
+            <input class="input" id="s-url" type="url" value="${U.esc(Api.gasUrl())}" placeholder="https://script.google.com/macros/s/.../exec" autocomplete="url">
           </div>
           <div class="flex gap" style="flex-wrap:wrap;">
             <button class="btn btn-primary" id="s-test">${UI.icon('bolt')} ทดสอบการเชื่อมต่อ</button>
             <button class="btn btn-outline" id="s-save-url">บันทึก URL</button>
           </div>
-          <p class="caption mt">ขั้นตอน: เปิด apps script → นำ Code.gs ไปวาง → Enable Drive API → Deploy > Web app (Execute as: Me, Access: Anyone) → คัดลอก URL มาวางตรงนี้</p>
+          <details class="setup-help mt"><summary>ดูวิธีเชื่อมต่อสำหรับผู้ดูแลระบบ</summary><p class="caption mt-sm">เปิด Apps Script วาง Code.gs เปิด Drive API แล้ว Deploy เป็น Web app จากนั้นคัดลอก URL ที่ลงท้ายด้วย /exec มาวางที่นี่</p></details>
           <p class="caption mt-sm">อัปเดตล่าสุด: ${lastSync ? U.fmtDateTime(lastSync) : 'ยังไม่เคยซิงก์'}</p>
         </div>
       </div>
@@ -56,7 +56,7 @@
           <div class="field"><label>ธีมสี</label>
             <div class="grid-3" style="gap:10px;">
               ${THEMES.map((t) => `
-                <button class="theme-btn ${theme === t.id ? 'theme-active' : ''}" data-theme-set="${t.id}" style="cursor:pointer;border:2px solid ${theme === t.id ? 'var(--primary)' : 'var(--outline-variant)'};background:var(--surface-container-lowest);border-radius:12px;padding:10px;display:flex;flex-direction:column;align-items:center;gap:8px;">
+                <button class="theme-btn ${theme === t.id ? 'theme-active' : ''}" data-theme-set="${t.id}" aria-pressed="${theme === t.id}" style="cursor:pointer;border:2px solid ${theme === t.id ? 'var(--primary)' : 'var(--outline-variant)'};background:var(--surface-container-lowest);border-radius:12px;padding:10px;display:flex;flex-direction:column;align-items:center;gap:8px;">
                   <div style="width:40px;height:40px;border-radius:50%;background:${t.color};box-shadow:var(--elev-1);"></div>
                   <span class="caption" style="font-weight:600;color:var(--on-surface);">${t.label}</span>
                 </button>`).join('')}
@@ -65,7 +65,7 @@
           <div style="display:flex;align-items:center;justify-content:space-between;margin-top:12px;">
             <span class="title">โหมดมืด</span>
             <label style="position:relative;display:inline-block;cursor:pointer;">
-              <input type="checkbox" id="s-dark" ${dark ? 'checked' : ''} class="hidden">
+              <input type="checkbox" id="s-dark" ${dark ? 'checked' : ''} class="sr-only-input" aria-label="เปิดโหมดมืด">
               <div style="width:48px;height:28px;background:${dark ? 'var(--primary)' : 'var(--outline-variant)'};border-radius:999px;transition:background 0.2s;position:relative;">
                 <span style="position:absolute;top:3px;left:${dark ? '23px' : '3px'};width:22px;height:22px;background:#fff;border-radius:50%;transition:left 0.2s;box-shadow:var(--elev-1);"></span>
               </div>
@@ -77,10 +77,10 @@
       <div class="card mb">
         <div class="card-body">
           <h3 class="h3 mb">ความปลอดภัย</h3>
-          <div class="field"><label>รหัสผ่าน 4 หลัก (ล็อกหน้าจอ)</label>
-            <input class="input" id="s-pass" type="password" inputmode="numeric" maxlength="4" value="${U.esc(Api.localPasscode())}" placeholder="1234">
+          <div class="field"><label for="s-pass">ตั้งรหัสผ่านใหม่ 4 หลัก</label>
+            <input class="input" id="s-pass" type="password" inputmode="numeric" minlength="4" maxlength="4" pattern="[0-9]{4}" value="" autocomplete="new-password" placeholder="กรอกรหัสใหม่ 4 หลัก">
           </div>
-          <p class="caption mb">รหัสจะถูกบันทึกไว้ในเครื่องและบนเซิร์ฟเวอร์ (แนะนำเปลี่ยนเป็นรหัสเฉพาะของคุณ)</p>
+          <p class="caption mb">ระบบไม่เก็บรหัสจริงในเครื่อง โดยใช้ค่าแฮชแบบมี salt สำหรับเปิดแคชเมื่อออฟไลน์</p>
           <button class="btn btn-outline" id="s-save-pass">${UI.icon('lock')} บันทึกรหัสผ่าน</button>
         </div>
       </div>
@@ -103,7 +103,7 @@
               <p class="caption" id="s-notify-status">ส่งการแจ้งเตือนเบราว์เซอร์เมื่อสต็อกต่ำกว่าเกณฑ์</p>
             </div>
             <label style="position:relative;display:inline-block;cursor:pointer;">
-              <input type="checkbox" id="s-notify" ${setup.notify ? 'checked' : ''} class="hidden">
+              <input type="checkbox" id="s-notify" ${setup.notify ? 'checked' : ''} class="sr-only-input" aria-label="แจ้งเตือนสินค้าใกล้หมด">
               <div style="width:48px;height:28px;background:${setup.notify ? 'var(--primary)' : 'var(--outline-variant)'};border-radius:999px;transition:background 0.2s;position:relative;">
                 <span style="position:absolute;top:3px;left:${setup.notify ? '23px' : '3px'};width:22px;height:22px;background:#fff;border-radius:50%;transition:left 0.2s;box-shadow:var(--elev-1);"></span>
               </div>
@@ -146,7 +146,7 @@
             Api.saveSetup(Object.assign(Api.getSetup(), { notify: true }));
             UI.toast('เปิดการแจ้งเตือนแล้ว');
           } else if (p === 'denied') {
-            UI.toast('ถูกบล็อกการแจ้งเตือน — อนุญาตในตั้งค่าเบราว์เซอร์', 'error');
+            UI.toast('การแจ้งเตือนถูกบล็อก กรุณาอนุญาตในตั้งค่าเบราว์เซอร์', 'error');
             e.target.checked = false;
             render(container);
           } else {
@@ -202,16 +202,20 @@
     if (testing) return;
     testing = true;
     const url = document.getElementById('s-url').value.trim();
+    const previousUrl = Api.gasUrl();
+    if (!validGasUrl(url)) { UI.toast('URL ต้องเป็น Google Apps Script และลงท้ายด้วย /exec', 'error'); testing = false; return; }
+    Api.saveSetup(Object.assign(Api.getSetup(), { url }));
     btn.innerHTML = UI.icon('progress_activity') + ' กำลังทดสอบ...';
     btn.disabled = true;
     try {
-      const res = await Api.ping();
-      // update cached url on success
-      Api.saveSetup(Object.assign(Api.getSetup(), { url }));
-      UI.toast('เชื่อมต่อสำเร็จ! ฐานข้อมูลพร้อมใช้งาน');
-      await Store.refresh();
-      App.renderView();
+      await Api.ping();
+      UI.toast('เชื่อมต่อสำเร็จ ฐานข้อมูลพร้อมใช้งาน');
+      if (url === previousUrl && Api.auth.hasSession()) {
+        await Store.refresh();
+        App.renderView();
+      }
     } catch (err) {
+      Api.saveSetup(Object.assign(Api.getSetup(), { url: previousUrl }));
       UI.toast('เชื่อมต่อไม่สำเร็จ: ' + err.message, 'error');
     }
     btn.innerHTML = UI.icon('bolt') + ' ทดสอบการเชื่อมต่อ';
@@ -222,9 +226,15 @@
 
   function saveUrl(container) {
     const url = document.getElementById('s-url').value.trim();
+    if (!validGasUrl(url)) { UI.toast('URL ต้องเป็น Google Apps Script และลงท้ายด้วย /exec', 'error'); return; }
+    Api.auth.clear();
     Api.saveSetup(Object.assign(Api.getSetup(), { url }));
-    UI.toast('บันทึก URL แล้ว');
+    UI.toast('บันทึก URL แล้ว การเชื่อมต่อครั้งถัดไปจะขอรหัสผ่านใหม่');
     render(container);
+  }
+
+  function validGasUrl(url) {
+    return /^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec(?:\?.*)?$/.test(String(url || ''));
   }
 
   async function saveStore(container) {
@@ -254,10 +264,9 @@
     btn.innerHTML = UI.icon('progress_activity', 'spin') + ' กำลังบันทึก...';
     try {
       await Api.settings.set('passcode', v);
-      Api.storePasscode(v);
-      Store.state.settings.passcode = v;
-      Store.persist();
+      await Api.auth.rememberPin(v);
       UI.toast('เปลี่ยนรหัสผ่านแล้ว');
+      document.getElementById('s-pass').value = '';
     } catch (err) { UI.toast(err.message, 'error'); }
     btn.disabled = false;
     btn.innerHTML = UI.icon('lock') + ' บันทึกรหัสผ่าน';

@@ -35,7 +35,9 @@ with the browser-based cleanup in `test/cleanup.mjs` (node->GAS is unreliable on
 some networks; cleanup runs from inside Chrome which routes fine).
 
 ## Coverage (full scenario, ~26 checks)
-- Boot, PIN unlock (uses real passcode), data sync
+- Boot, PIN unlock (uses `CHOWHUAY_TEST_PIN` or defaults to `1234`), data sync
+- Set `CHOWHUAY_GAS_URL` to test a candidate Apps Script deployment without changing production config
+- Set `CHOWHUAY_TEST_PORT` when port `8765` is already in use
 - Settings: theme, dark mode, store name, passcode, notification toggle
 - POS: scan modal, add-to-cart, checkout with discount + cash → verifies
   discount math (25-5=20), change (50-20=30)

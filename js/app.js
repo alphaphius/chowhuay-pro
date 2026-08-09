@@ -24,17 +24,12 @@
 
   const App = {
     route: 'dashboard',
+    offline: false,
 
     init() {
       Store.loadCache();
       applySavedTheme();
       Store.state.settings = Store.state.settings || {};
-
-      if (Api.isConfigured()) {
-        // Always sync fresh data at boot — cached syncedAt may hold an old
-        // passcode/settings (e.g. changed from another device).
-        refreshSilent();
-      }
 
       bindNav();
       bindPasscode();
@@ -44,6 +39,7 @@
       // PWA
       window.addEventListener('beforeinstallprompt', (e) => ViewSettings.captureInstall(e));
       registerSW();
+      checkConnection();
 
       document.addEventListener('app:restock', (e) => {
         const prod = e.detail;
@@ -54,9 +50,29 @@
 
     unlock(pinOk) {
       unlocked = true;
-      document.getElementById('passcode-overlay').classList.add('hidden');
-      document.getElementById('app-shell').classList.remove('hidden');
+      const overlay = document.getElementById('passcode-overlay');
+      const shell = document.getElementById('app-shell');
+      overlay.classList.add('hidden');
+      overlay.setAttribute('aria-hidden', 'true');
+      shell.classList.remove('hidden');
+      shell.removeAttribute('aria-hidden');
       route();
+    },
+
+    lock(message) {
+      unlocked = false;
+      pin = '';
+      const overlay = document.getElementById('passcode-overlay');
+      const shell = document.getElementById('app-shell');
+      shell.classList.add('hidden');
+      shell.setAttribute('aria-hidden', 'true');
+      overlay.classList.remove('hidden');
+      overlay.removeAttribute('aria-hidden');
+      document.querySelectorAll('.pin-dot').forEach((d) => { d.className = 'pin-dot'; });
+      const status = document.getElementById('pin-status');
+      if (status) status.textContent = message || 'กรุณาใส่รหัสผ่านอีกครั้ง';
+      const firstKey = overlay.querySelector('.numpad button');
+      if (firstKey) firstKey.focus();
     },
 
     renderView() {
@@ -78,10 +94,10 @@
         else if (this.route === 'reports') ViewReports.render(c);
         else if (this.route === 'settings') ViewSettings.render(c);
       } catch (err) {
-        c.innerHTML = '<div class="empty-state"><span class="material-symbols-outlined">error</span><p class="body">เกิดข้อผิดพลาด: ' + U.esc(err.message || err) + '</p></div>';
+        c.innerHTML = '<div class="empty-state" role="alert"><span class="material-symbols-outlined" aria-hidden="true">error</span><p class="body">เปิดหน้านี้ไม่สำเร็จ: ' + U.esc(err.message || err) + '</p><button class="btn btn-primary" data-retry-view>ลองอีกครั้ง</button></div>';
       }
       if (!Api.isConfigured() && !Store.state.syncedAt && this.route !== 'settings') {
-        UI.toast('ยังไม่ได้เชื่อมต่อฐานข้อมูล — ไปที่การตั้งค่าเพื่อตั้งค่า Apps Script', 'error');
+        UI.toast('ยังไม่ได้เชื่อมต่อฐานข้อมูล ไปที่การตั้งค่าเพื่อตั้งค่า Apps Script', 'error');
       }
     },
 
@@ -103,9 +119,36 @@
   }
 
   function refreshSilent() {
-    return Api.isConfigured()
-      ? Store.refresh().then(() => { ViewSettings.updateInstallButton(); checkLowStockAlerts(); }).catch((err) => { console.warn('sync fail', err); })
+    return Api.isConfigured() && Api.auth.hasSession()
+      ? Store.refresh().then(() => {
+        App.offline = false;
+        updateSyncStatus('synced');
+        ViewSettings.updateInstallButton();
+        checkLowStockAlerts();
+      }).catch((err) => {
+        updateSyncStatus('error');
+        console.warn('sync fail', err);
+        throw err;
+      })
       : Promise.resolve();
+  }
+
+  function checkConnection() {
+    updateSyncStatus('checking');
+    if (!Api.isConfigured()) { updateSyncStatus('setup'); return; }
+    Api.ping().then(() => updateSyncStatus('ready')).catch(() => updateSyncStatus('offline'));
+  }
+
+  function updateSyncStatus(state) {
+    const el = document.getElementById('sync-status');
+    if (!el) return;
+    const labels = {
+      checking: 'กำลังตรวจสอบการเชื่อมต่อ', ready: 'พร้อมเชื่อมต่อ', syncing: 'กำลังซิงก์ข้อมูล',
+      synced: 'ข้อมูลเป็นปัจจุบัน', error: 'ซิงก์ไม่สำเร็จ กดลองใหม่', offline: 'ออฟไลน์ ใช้ข้อมูลล่าสุดในเครื่อง',
+      setup: 'ยังไม่ได้เชื่อมต่อฐานข้อมูล'
+    };
+    el.dataset.state = state;
+    el.textContent = labels[state] || '';
   }
 
   // ---- low-stock browser notifications (once per product per day) ----
@@ -124,7 +167,7 @@
       if (alerted[p.id] === today) return;
       alerted[p.id] = today;
       const out = U.num(p.stock) <= 0;
-      U.notifyShow(storeName + ' — สินค้า' + (out ? 'หมด' : 'ใกล้หมด'), {
+      U.notifyShow(storeName + ': สินค้า' + (out ? 'หมด' : 'ใกล้หมด'), {
         body: p.name + ' (เหลือ ' + U.fmtInt(p.stock) + ' ' + (p.unit || 'ชิ้น') + ')',
         icon: 'icons/icon-192.png',
         tag: 'lowstock-' + p.id
@@ -139,9 +182,13 @@
     document.querySelectorAll('[data-route]').forEach((el) => {
       const on = el.dataset.route === App.route;
       el.classList.toggle('active', on);
+      if (on) el.setAttribute('aria-current', 'page');
+      else el.removeAttribute('aria-current');
     });
     App.renderView();
     window.scrollTo(0, 0);
+    const main = document.getElementById('main-content');
+    if (main) main.focus({ preventScroll: true });
   }
 
   function bindNav() {
@@ -157,16 +204,30 @@
   function bindTopbar() {
     const syncBtn = document.getElementById('topbar-sync');
     if (syncBtn) syncBtn.addEventListener('click', async () => {
+      if (syncBtn.disabled) return;
+      if (Api.isConfigured() && !Api.auth.hasSession()) {
+        App.lock('ใส่รหัสผ่านเพื่อซิงก์ข้อมูลล่าสุด');
+        return;
+      }
+      syncBtn.disabled = true;
+      syncBtn.setAttribute('aria-busy', 'true');
+      updateSyncStatus('syncing');
       syncBtn.style.transform = 'rotate(360deg)';
       syncBtn.style.transition = 'transform 0.4s';
       if (Api.isConfigured()) {
-        await refreshSilent();
-        UI.toast('ซิงก์ข้อมูลล่าสุดแล้ว');
+        try {
+          await refreshSilent();
+          UI.toast('ข้อมูลเป็นปัจจุบันแล้ว');
+        } catch (err) {
+          UI.toast(err.message || 'ซิงก์ไม่สำเร็จ กดลองอีกครั้ง', 'error');
+        }
       } else {
         UI.toast('ยังไม่ได้ตั้งค่า Apps Script URL', 'error');
         location.hash = '#/settings';
       }
       setTimeout(() => { syncBtn.style.transform = ''; syncBtn.style.transition = ''; }, 450);
+      syncBtn.disabled = false;
+      syncBtn.removeAttribute('aria-busy');
       App.renderView();
     });
   }
@@ -193,10 +254,16 @@
     const retry = document.getElementById('pin-retry');
     if (retry) retry.addEventListener('click', async () => {
       retry.disabled = true;
-      setStatus('กำลังติดต่อฐานข้อมูล...');
-      await refreshSilent();
+      setStatus('กำลังตรวจสอบการเชื่อมต่อ...');
+      try {
+        await Api.ping();
+        setStatus('เชื่อมต่อได้แล้ว กรุณาใส่รหัสผ่าน');
+        updateSyncStatus('ready');
+      } catch (err) {
+        setStatus('ยังเชื่อมต่อไม่ได้ ตรวจอินเทอร์เน็ตแล้วลองอีกครั้ง');
+        updateSyncStatus('offline');
+      }
       retry.disabled = false;
-      setStatus(Store.state.loaded ? '' : 'ติดต่อฐานข้อมูลไม่ได้ — ตรวจอินเทอร์เน็ต แล้วลองใหม่');
     });
 
     const reset = document.getElementById('pin-reset');
@@ -215,19 +282,6 @@
       location.reload();
     });
 
-    // quick test via enter key on hidden input (desktop convenience)
-    const quick = document.getElementById('pin-quick');
-    if (quick) quick.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        const v = quick.value.trim();
-        if (/^\d{4}$/.test(v)) {
-          pin = v;
-          updateDots(dots);
-          verifyPin(dots);
-          quick.value = '';
-        }
-      }
-    });
   }
 
   function updateDots(dots) {
@@ -237,22 +291,29 @@
   }
 
   async function verifyPin(dots) {
-    // Always confirm against the freshly-synced backend passcode, never a stale
-    // cached one (it can hold an old PIN from another device/earlier session).
-    // Falls back to cache/local only when the backend is unreachable.
     const status = document.getElementById('pin-status');
     const setStatus = (t) => { if (status) status.textContent = t || ''; };
-    if (Api.isConfigured() && !Store.state.loaded) {
-      setStatus('กำลังติดต่อฐานข้อมูล...');
-      const t0 = Date.now();
-      while (!Store.state.loaded && Date.now() - t0 < 8000) {
-        await new Promise((r) => setTimeout(r, 150));
+    setStatus('กำลังตรวจสอบและโหลดข้อมูล...');
+    let accepted = false;
+    try {
+      if (!Api.isConfigured()) throw new ApiError('NO_SETUP', 'ยังไม่ได้เชื่อมต่อฐานข้อมูล');
+      const auth = await Api.auth.login(pin);
+      Store.state.settings = auth.settings || {};
+      await Store.refresh();
+      accepted = true;
+      App.offline = false;
+      updateSyncStatus('synced');
+    } catch (err) {
+      if ((err.code === 'NETWORK' || err.code === 'TIMEOUT') && Store.state.syncedAt && await Api.auth.verifyRememberedPin(pin)) {
+        accepted = true;
+        App.offline = true;
+        updateSyncStatus('offline');
+        UI.toast('เปิดแบบออฟไลน์ ใช้ข้อมูลล่าสุดในเครื่อง', 'error');
+      } else {
+        setStatus(err.message || 'ตรวจสอบรหัสผ่านไม่สำเร็จ กรุณาลองอีกครั้ง');
       }
-      if (!Store.state.loaded) setStatus('ติดต่อฐานข้อมูลไม่ได้ — ตรวจอินเทอร์เน็ต แล้วลองใหม่');
-      else setStatus('');
     }
-    const expected = (Store.state.settings && Store.state.settings.passcode) || Api.localPasscode();
-    if (pin === String(expected)) {
+    if (accepted) {
       setStatus('');
       dots.forEach((d) => d.classList.add('success'));
       setTimeout(() => {
@@ -261,23 +322,27 @@
         App.unlock(true);
       }, 250);
     } else {
-      setStatus('');
       dots.forEach((d) => d.classList.add('error'));
       const wrap = document.querySelector('.pin-dots');
       if (wrap) wrap.animate([{ transform: 'translateX(0)' }, { transform: 'translateX(-10px)' }, { transform: 'translateX(10px)' }, { transform: 'translateX(-8px)' }, { transform: 'translateX(8px)' }, { transform: 'translateX(0)' }], { duration: 350 });
       setTimeout(() => {
         pin = '';
         updateDots(dots);
-        UI.toast('รหัสผ่านไม่ถูกต้อง', 'error');
       }, 450);
     }
   }
 
   function bindGlobal() {
-    // Enter key on PIN quick input focuses
-    document.addEventListener('keydown', () => {});
-    // Prevent double-tap zoom on mobile
-    document.addEventListener('dblclick', (e) => e.preventDefault());
+    document.addEventListener('keydown', (e) => {
+      if (!unlocked && /^\d$/.test(e.key)) { e.preventDefault(); window.enterPin(Number(e.key)); }
+      else if (!unlocked && e.key === 'Backspace') { e.preventDefault(); window.deletePin(); }
+    });
+    document.addEventListener('click', (e) => {
+      if (e.target.closest('[data-retry-view]')) App.renderView();
+    });
+    window.addEventListener('online', () => { checkConnection(); UI.toast('กลับมาออนไลน์แล้ว กดซิงก์เพื่ออัปเดตข้อมูล'); });
+    window.addEventListener('offline', () => { App.offline = true; updateSyncStatus('offline'); });
+    window.addEventListener('app:auth-required', () => App.lock('เซสชันหมดอายุ กรุณาใส่รหัสผ่านอีกครั้ง'));
   }
 
   function registerSW() {
