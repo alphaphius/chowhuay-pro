@@ -126,6 +126,34 @@
     setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
   }
 
+  // Print an HTML document without window.open() — mobile browsers block popups
+  // and kill the new window, which crashed the PDF/print flow. Uses a hidden
+  // iframe instead; falls back to a Blob tab if iframe printing is unsupported.
+  function printHTML(docHtml) {
+    window.__printHTML = docHtml;
+    const iframe = document.createElement('iframe');
+    iframe.setAttribute('aria-hidden', 'true');
+    iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden;';
+    document.body.appendChild(iframe);
+    const win = iframe.contentWindow;
+    const doc = win.document;
+    doc.open();
+    doc.write(docHtml);
+    doc.close();
+    const fire = () => {
+      try {
+        win.focus();
+        win.print();
+      } catch (e) {
+        const url = URL.createObjectURL(new Blob([docHtml], { type: 'text/html;charset=utf-8' }));
+        window.open(url, '_blank');
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
+      }
+    };
+    setTimeout(fire, 350);
+    setTimeout(() => iframe.remove(), 60000);
+  }
+
   // ---- browser notifications ----
   function notifySupported() {
     return typeof window.Notification !== 'undefined';
@@ -148,7 +176,7 @@
   global.U = {
     num, round2, fmtMoney, fmtInt, fmtDate, fmtTime, fmtDateTime, todayStr,
     esc, uid, debounce, loadImage, compressImage, imgUrl, sameDay,
-    startOfWeek, startOfMonth, download,
+    startOfWeek, startOfMonth, download, printHTML,
     notifySupported, notifyPermission, notifyRequest, notifyShow
   };
 })(window);

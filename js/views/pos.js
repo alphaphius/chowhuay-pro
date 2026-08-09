@@ -86,13 +86,13 @@
       const sel = inCart ? ' selected' : '';
       return `
         <div class="product-card${out ? ' product-out' : ''}${sel}" data-add="${U.esc(p.id)}" title="${U.esc(p.name)}">
-          <div class="product-thumb">
+          <div class="product-thumb"${p.imgId ? ` data-zoom-src="${U.imgUrl(p.imgId, 'w320')}" data-zoom-name="${U.esc(p.name)}"` : ''}>
             ${p.imgId ? `<img loading="lazy" src="${U.imgUrl(p.imgId)}" alt="${U.esc(p.name)}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">` : ''}
             <div class="placeholder" ${p.imgId ? 'style="display:none;"' : ''}>${UI.icon('shopping_basket')}</div>
             ${out ? '<span class="stock-badge badge badge-warning">หมด</span>'
               : low ? '<span class="stock-badge badge badge-warning">เหลือ ' + U.fmtInt(stock) + '</span>'
               : '<span class="stock-badge badge badge-success">มี ' + U.fmtInt(stock) + '</span>'}
-            ${inCart ? '<span class="stock-badge badge badge-info" style="left:auto;right:8px;bottom:8px;">' + inCart.qty + ' ในรถ</span>' : ''}
+            ${inCart ? '<span class="stock-badge badge badge-info" style="left:auto;right:6px;bottom:6px;">' + inCart.qty + ' ในตะกร้า</span>' : ''}
           </div>
           <div class="product-info">
             <div class="product-name line-clamp-2">${U.esc(p.name)}</div>
@@ -193,6 +193,20 @@
   function wirePosEvents(container) {
     if (container.__wired) return;   // renders re-render innerHTML; don't stack listeners
     container.__wired = true;
+    let pressTimer = null;
+    container.addEventListener('pointerdown', (e) => {
+      const z = e.target.closest('[data-zoom-src]');
+      if (!z) return;
+      if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; }
+      pressTimer = setTimeout(() => {
+        pressTimer = null;
+        showImageZoom(z.getAttribute('data-zoom-src'), z.getAttribute('data-zoom-name'));
+        z.__suppressClick = true;
+      }, 500);
+    });
+    container.addEventListener('pointerup', () => { if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; } });
+    container.addEventListener('pointercancel', () => { if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; } });
+    container.addEventListener('contextmenu', (e) => { if (e.target.closest('[data-zoom-src]')) e.preventDefault(); });
     container.addEventListener('input', (e) => {
       if (e.target.id === 'pos-search') {
         filterQ = e.target.value;
@@ -200,6 +214,9 @@
       }
     });
     container.addEventListener('click', (e) => {
+      const zoomEl = e.target.closest('[data-zoom-src]');
+      if (zoomEl && zoomEl.__suppressClick) { zoomEl.__suppressClick = false; return; }
+
       const grid = e.target.closest('[data-add]');
       if (grid) { addToCart(grid.dataset.add); return; }
 
@@ -382,15 +399,25 @@
         <p style="font-size:18px;">ยอดสุทธิ <b>${U.fmtMoney(total)}</b></p>
         <p style="font-size:13px;color:#555;">ชำระด้วย ${payment === 'cash' ? 'เงินสด' : payment === 'promptpay' ? 'PromptPay' : 'บัตรเครดิต'}</p>
       </div>`;
-    const w = window.open('', '_blank', 'width=380,height=640');
-    w.document.write('<html><head><meta charset="utf-8"><title>ใบเสร็จ</title></head><body>' + html + '</body></html>');
-    w.document.close();
-    w.focus();
-    w.print();
+    U.printHTML('<html><head><meta charset="utf-8"><title>ใบเสร็จ</title><style>body{font-family:system-ui,-apple-system,sans-serif;color:#111;padding:24px;font-size:14px;}@media print{body{padding:8px;}}</style></head><body>' + html + '</body></html>');
   }
 
-  // ---- barcode scanner ----
-  let scanCleanup = null;
+  // ---- image zoom (long-press) ----
+  function showImageZoom(src, name) {
+    const root = document.createElement('div');
+    root.className = 'modal-backdrop';
+    root.style.background = 'rgba(0,0,0,0.88)';
+    root.innerHTML = `
+      <div style="width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;gap:14px;">
+        <img src="${src}" alt="" style="max-width:100%;max-height:68vh;border-radius:16px;box-shadow:0 8px 40px rgba(0,0,0,0.5);background:#fff;">
+        ${name ? `<div style="color:#fff;font-size:16px;font-weight:600;text-align:center;">${U.esc(name)}</div>` : ''}
+        <div class="caption" style="color:rgba(255,255,255,0.7);">กดเพื่อปิด</div>
+      </div>`;
+    root.addEventListener('click', () => root.remove());
+    document.body.appendChild(root);
+  }
+
+  // ---- barcode scanner ----  let scanCleanup = null;
   function openScanner(onCode) {
     if (scannerActive) return;
     const root = document.createElement('div');

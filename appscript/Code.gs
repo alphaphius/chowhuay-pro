@@ -92,6 +92,7 @@ function handle(action, params, body) {
     case 'settings:set': return setSetting(body.key, body.value);
     case 'image:upload': return uploadImage(body.b64, body.filename);
     case 'image:delete': return deleteImage(body.id);
+    case 'image:repairShare': return repairImageSharing();
     default:
       return { ok: true, msg: 'unknown action', action: action };
   }
@@ -606,9 +607,46 @@ function uploadImage(b64, filename) {
   var blob = Utilities.newBlob(bytes, 'image/jpeg', name);
   var file = folder.createFile(blob);
   var id = file.getId();
+  shareFilePublic(file);
   var cfg = getSettings();
   // delete old image if re-uploading to same product is handled on the client; here we just return id
   return { ok: true, imgId: id };
+}
+
+// New files created via createFile() do NOT inherit the folder's sharing.
+// Without "anyone with link" the Drive thumbnail URL redirects to a sign-in
+// page for visitors who aren't logged into the owning Google account (i.e.
+// the shop phone). Share every uploaded image publicly so thumbnails load.
+function shareFilePublic(file) {
+  try {
+    if (typeof Drive !== 'undefined' && Drive.Files) {
+      Drive.Files.update({ 'writersCanShare': false }, file.getId(), null, { 'supportsAllDrives': true });
+      Drive.Permissions.insert({ role: 'reader', type: 'anyone', allowFileDiscovery: false }, file.getId());
+    } else {
+      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    }
+  } catch (e) {
+    Logger.log('share file %s failed: %s', file.getName(), e.message);
+  }
+}
+
+// One-off repair: re-share every image already in the folder so old products
+// show thumbnails on phones too. Trigger: action=image:repairShare
+function repairImageSharing() {
+  var folder = ensureImageFolder();
+  var it = folder.getFiles();
+  var shared = 0, failed = 0;
+  while (it.hasNext()) {
+    var f = it.next();
+    try {
+      f.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+      shared++;
+    } catch (e) {
+      failed++;
+      Logger.log('repair share %s failed: %s', f.getName(), e.message);
+    }
+  }
+  return { ok: true, shared: shared, failed: failed };
 }
 
 function deleteImage(id) {

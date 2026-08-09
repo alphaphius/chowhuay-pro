@@ -296,16 +296,10 @@
     ok('excel export: XLSX loaded=' + !!window.XLSX);
 
     // --- reports: pdf export ---
-    window.__pdfTitle = null;
-    const origOpen = window.open;
-    window.open = function (u, name) {
-      const w = { document: { write: function (html) { window.__pdfTitle = (html.match(/<title>(.*?)<\/title>/) || [])[1] || name; }, close: function () {} }, focus: function () {}, print: function () {} };
-      return w;
-    };
+    window.__printHTML = null;
     document.getElementById('r-pdf').click();
     await wait(600);
-    window.open = origOpen;
-    ok('pdf export: report opened=' + (window.__pdfTitle && window.__pdfTitle.includes('รายงาน')));
+    ok('pdf export: report printed=' + (window.__printHTML && window.__printHTML.includes('รายงาน')));
 
     // --- reports: range buttons ---
     document.querySelector('[data-range="week"]').click();

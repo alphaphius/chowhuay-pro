@@ -212,15 +212,20 @@
     // Always confirm against the freshly-synced backend passcode, never a stale
     // cached one (it can hold an old PIN from another device/earlier session).
     // Falls back to cache/local only when the backend is unreachable.
+    const status = document.getElementById('pin-status');
+    const setStatus = (t) => { if (status) status.textContent = t || ''; };
     if (Api.isConfigured() && !Store.state.loaded) {
-      UI.toast('กำลังตรวจสอบรหัสกับฐานข้อมูล...');
+      setStatus('กำลังติดต่อฐานข้อมูล...');
       const t0 = Date.now();
       while (!Store.state.loaded && Date.now() - t0 < 8000) {
         await new Promise((r) => setTimeout(r, 150));
       }
+      if (!Store.state.loaded) setStatus('ติดต่อฐานข้อมูลไม่ได้ — ตรวจอินเทอร์เน็ต แล้วลองใหม่');
+      else setStatus('');
     }
     const expected = (Store.state.settings && Store.state.settings.passcode) || Api.localPasscode();
     if (pin === String(expected)) {
+      setStatus('');
       dots.forEach((d) => d.classList.add('success'));
       setTimeout(() => {
         pin = '';
@@ -228,6 +233,7 @@
         App.unlock(true);
       }, 250);
     } else {
+      setStatus('');
       dots.forEach((d) => d.classList.add('error'));
       const wrap = document.querySelector('.pin-dots');
       if (wrap) wrap.animate([{ transform: 'translateX(0)' }, { transform: 'translateX(-10px)' }, { transform: 'translateX(10px)' }, { transform: 'translateX(-8px)' }, { transform: 'translateX(8px)' }, { transform: 'translateX(0)' }], { duration: 350 });

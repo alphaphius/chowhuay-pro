@@ -303,8 +303,7 @@
     Store.state.purchases.filter((p) => Store.inRange(p.date, from, to)).forEach((p) => tx.push({ kind: 'purchase', date: p.date, code: '', label: p.description || '(ทุนรวม)', amount: p.total }));
     tx.sort((a, b) => String(b.date).localeCompare(String(a.date)));
 
-    const w = window.open('', '_blank', 'width=900,height=700');
-    w.document.write(`<html><head><meta charset="utf-8"><title>รายงาน ChowHuay Pro</title>
+    U.printHTML(`<html><head><meta charset="utf-8"><title>รายงาน ChowHuay Pro</title>
       <style>
         body{font-family:system-ui,-apple-system,sans-serif;color:#0b1c30;padding:32px;font-size:13px;}
         h1{font-size:22px;margin:0 0 4px;} h2{font-size:15px;margin:18px 0 8px;color:#003d9b;}
@@ -336,8 +335,6 @@
       </table>
       <div style="margin-top:24px;text-align:center;color:#999;font-size:11px;">จัดทำโดย ChowHuay Pro</div>
       </body></html>`);
-    w.document.close();
-    setTimeout(() => { w.focus(); w.print(); }, 400);
   }
 
   global.ViewReports = { render };
