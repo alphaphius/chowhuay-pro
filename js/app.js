@@ -30,7 +30,9 @@
       applySavedTheme();
       Store.state.settings = Store.state.settings || {};
 
-      if (Api.isConfigured() && !Store.state.syncedAt) {
+      if (Api.isConfigured()) {
+        // Always sync fresh data at boot — cached syncedAt may hold an old
+        // passcode/settings (e.g. changed from another device).
         refreshSilent();
       }
 
@@ -207,10 +209,11 @@
   }
 
   async function verifyPin(dots) {
-    // First boot: don't judge the PIN against a stale cache while the backend
-    // settings are still loading — wait (bounded) for the fresh passcode.
-    const firstSync = Api.isConfigured() && !Store.state.loaded && !Store.state.syncedAt;
-    if (firstSync) {
+    // Always confirm against the freshly-synced backend passcode, never a stale
+    // cached one (it can hold an old PIN from another device/earlier session).
+    // Falls back to cache/local only when the backend is unreachable.
+    if (Api.isConfigured() && !Store.state.loaded) {
+      UI.toast('กำลังตรวจสอบรหัสกับฐานข้อมูล...');
       const t0 = Date.now();
       while (!Store.state.loaded && Date.now() - t0 < 8000) {
         await new Promise((r) => setTimeout(r, 150));
