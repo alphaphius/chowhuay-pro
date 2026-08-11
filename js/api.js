@@ -132,7 +132,8 @@
       create: (p) => call('product:create', { product: p }),
       update: (p) => call('product:update', { product: p }),
       remove: (id) => call('product:delete', { id }),
-      adjust: (id, delta) => call('product:adjust', { id, delta })
+      adjust: (id, delta) => call('product:adjust', { id, delta }),
+      adjustBatch: (adjustments) => call('product:adjustBatch', { adjustments }, { timeout: 45000 })
     },
     sale: {
       create: (s) => call('sale:create', { sale: s }),

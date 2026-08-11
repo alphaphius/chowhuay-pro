@@ -87,17 +87,18 @@
       const sel = inCart ? ' selected' : '';
       return `
         <button type="button" class="product-card${out ? ' product-out' : ''}${sel}" data-add="${U.esc(p.id)}" aria-label="เพิ่ม ${U.esc(p.name)} ราคา ${U.fmtMoney(p.sell)} คงเหลือ ${U.fmtInt(stock)} ${U.esc(p.unit || 'ชิ้น')}" aria-pressed="${!!inCart}" ${out ? 'disabled' : ''}>
+          ${inCart ? `<span class="cart-qty-badge" aria-hidden="true">${UI.icon('shopping_cart')}<strong>${inCart.qty}</strong></span>` : ''}
           <div class="product-thumb"${p.imgId ? ` data-zoom-src="${U.imgUrl(p.imgId, 'w320')}" data-zoom-name="${U.esc(p.name)}"` : ''}>
             ${p.imgId ? `<img loading="lazy" src="${U.imgUrl(p.imgId)}" alt="${U.esc(p.name)}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">` : ''}
             <div class="placeholder" ${p.imgId ? 'style="display:none;"' : ''}>${UI.icon('shopping_basket')}</div>
-            ${out ? '<span class="stock-badge badge badge-warning">หมด</span>'
-              : low ? '<span class="stock-badge badge badge-warning">เหลือ ' + U.fmtInt(stock) + '</span>'
-              : '<span class="stock-badge badge badge-success">มี ' + U.fmtInt(stock) + '</span>'}
-            ${inCart ? '<span class="stock-badge badge badge-info" style="left:auto;right:6px;bottom:6px;">' + inCart.qty + ' ในตะกร้า</span>' : ''}
           </div>
           <div class="product-info">
             <div class="product-name line-clamp-2">${U.esc(p.name)}</div>
             <div class="product-price">${U.fmtMoney(p.sell)}</div>
+            <div class="product-stock ${out ? 'is-out' : low ? 'is-low' : ''}">
+              ${UI.icon(out ? 'error' : low ? 'warning' : 'inventory_2')}
+              <span>${out ? 'สินค้าหมด' : low ? 'เหลือน้อย ' + U.fmtInt(stock) + ' ' + U.esc(p.unit || 'ชิ้น') : 'คงเหลือ ' + U.fmtInt(stock) + ' ' + U.esc(p.unit || 'ชิ้น')}</span>
+            </div>
           </div>
         </button>`;
     }).join('');

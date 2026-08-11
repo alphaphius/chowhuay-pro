@@ -156,7 +156,7 @@
 
   // ---- browser notifications ----
   function notifySupported() {
-    return typeof window.Notification !== 'undefined';
+    return typeof window.Notification !== 'undefined' && 'serviceWorker' in navigator;
   }
   function notifyPermission() {
     if (!notifySupported()) return 'unsupported';
@@ -168,15 +168,122 @@
     if (Notification.permission === 'denied') return Promise.resolve('denied');
     try { return Notification.requestPermission(); } catch (e) { return Promise.resolve('denied'); }
   }
-  function notifyShow(title, opts) {
-    if (!notifySupported() || Notification.permission !== 'granted') return null;
-    try { return new Notification(title, opts || {}); } catch (e) { return null; }
+  async function notifyShow(title, opts) {
+    if (!notifySupported() || Notification.permission !== 'granted') return false;
+    const options = Object.assign({}, opts || {});
+    try {
+      // Mobile Chrome/Android does not reliably support `new Notification()`.
+      // A ServiceWorkerRegistration is the cross-platform PWA notification path.
+      const registration = await navigator.serviceWorker.ready;
+      await registration.showNotification(title, options);
+      return true;
+    } catch (swError) {
+      // Desktop fallback for browsers that expose Notification but reject SW display.
+      try { new Notification(title, options); return true; } catch (e) { return false; }
+    }
+  }
+
+  // ---- custom theme palette ----
+  const CUSTOM_THEME_PROPS = [
+    '--primary', '--on-primary', '--primary-container', '--on-primary-container',
+    '--primary-fixed', '--on-primary-fixed', '--primary-fixed-dim', '--secondary',
+    '--on-secondary', '--secondary-container', '--on-secondary-container',
+    '--secondary-fixed', '--secondary-fixed-dim', '--tertiary', '--on-tertiary',
+    '--tertiary-container', '--on-tertiary-container', '--surface-tint'
+  ];
+
+  function validHex(value) { return /^#[0-9a-f]{6}$/i.test(String(value || '')); }
+
+  function hexToHsl(hex) {
+    const n = parseInt(String(hex).slice(1), 16);
+    const r = ((n >> 16) & 255) / 255, g = ((n >> 8) & 255) / 255, b = (n & 255) / 255;
+    const max = Math.max(r, g, b), min = Math.min(r, g, b);
+    let h = 0, s = 0;
+    const l = (max + min) / 2;
+    if (max !== min) {
+      const d = max - min;
+      s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+      if (max === r) h = (g - b) / d + (g < b ? 6 : 0);
+      else if (max === g) h = (b - r) / d + 2;
+      else h = (r - g) / d + 4;
+      h *= 60;
+    }
+    return { h: Math.round(h), s: Math.round(s * 100), l: Math.round(l * 100) };
+  }
+
+  function hsl(h, s, l) {
+    return 'hsl(' + ((h % 360) + 360) % 360 + ' ' + Math.max(0, Math.min(100, s)) + '% ' + Math.max(0, Math.min(100, l)) + '%)';
+  }
+
+  function relativeLuminance(hue, saturation, lightness) {
+    const s = saturation / 100, l = lightness / 100;
+    const c = (1 - Math.abs(2 * l - 1)) * s;
+    const x = c * (1 - Math.abs(((hue / 60) % 2) - 1));
+    const m = l - c / 2;
+    let rgb;
+    if (hue < 60) rgb = [c, x, 0];
+    else if (hue < 120) rgb = [x, c, 0];
+    else if (hue < 180) rgb = [0, c, x];
+    else if (hue < 240) rgb = [0, x, c];
+    else if (hue < 300) rgb = [x, 0, c];
+    else rgb = [c, 0, x];
+    const linear = rgb.map((v) => {
+      const channel = v + m;
+      return channel <= 0.04045 ? channel / 12.92 : Math.pow((channel + 0.055) / 1.055, 2.4);
+    });
+    return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2];
+  }
+
+  function contrastText(hue, saturation, lightness) {
+    return relativeLuminance(((hue % 360) + 360) % 360, saturation, lightness) > 0.179 ? '#101418' : '#ffffff';
+  }
+
+  function clearCustomTheme(root) {
+    CUSTOM_THEME_PROPS.forEach((name) => root.style.removeProperty(name));
+  }
+
+  function applyCustomTheme(root, hex, mode) {
+    if (!validHex(hex)) return false;
+    const base = hexToHsl(hex);
+    const saturation = Math.max(36, Math.min(86, base.s));
+    const dark = mode === 'dark';
+    const primaryL = dark ? 76 : Math.max(28, Math.min(48, base.l));
+    const containerL = dark ? 34 : 88;
+    const fixedL = dark ? 82 : 91;
+    const secondaryH = base.h + 38;
+    const tertiaryH = base.h + 155;
+    const secondaryS = Math.max(28, Math.round(saturation * 0.62));
+    const secondaryL = dark ? 74 : 36;
+    const tertiaryL = dark ? 74 : 34;
+    const values = {
+      '--primary': hsl(base.h, saturation, primaryL),
+      '--on-primary': contrastText(base.h, saturation, primaryL),
+      '--primary-container': hsl(base.h, Math.max(30, saturation - 8), containerL),
+      '--on-primary-container': contrastText(base.h, Math.max(30, saturation - 8), containerL),
+      '--primary-fixed': hsl(base.h, Math.max(30, saturation - 12), fixedL),
+      '--on-primary-fixed': contrastText(base.h, Math.max(30, saturation - 12), fixedL),
+      '--primary-fixed-dim': hsl(base.h, Math.max(30, saturation - 10), dark ? 72 : 80),
+      '--secondary': hsl(secondaryH, secondaryS, secondaryL),
+      '--on-secondary': contrastText(secondaryH, secondaryS, secondaryL),
+      '--secondary-container': hsl(secondaryH, Math.max(24, secondaryS - 6), dark ? 32 : 88),
+      '--on-secondary-container': contrastText(secondaryH, Math.max(24, secondaryS - 6), dark ? 32 : 88),
+      '--secondary-fixed': hsl(secondaryH, Math.max(24, secondaryS - 6), 88),
+      '--secondary-fixed-dim': hsl(secondaryH, Math.max(24, secondaryS - 6), 78),
+      '--tertiary': hsl(tertiaryH, Math.max(32, saturation - 16), tertiaryL),
+      '--on-tertiary': contrastText(tertiaryH, Math.max(32, saturation - 16), tertiaryL),
+      '--tertiary-container': hsl(tertiaryH, Math.max(26, saturation - 22), dark ? 32 : 88),
+      '--on-tertiary-container': contrastText(tertiaryH, Math.max(26, saturation - 22), dark ? 32 : 88),
+      '--surface-tint': hsl(base.h, saturation, primaryL)
+    };
+    Object.keys(values).forEach((name) => root.style.setProperty(name, values[name]));
+    return true;
   }
 
   global.U = {
     num, round2, fmtMoney, fmtInt, fmtDate, fmtTime, fmtDateTime, todayStr,
     esc, uid, debounce, loadImage, compressImage, imgUrl, sameDay,
     startOfWeek, startOfMonth, download, printHTML,
-    notifySupported, notifyPermission, notifyRequest, notifyShow
+    notifySupported, notifyPermission, notifyRequest, notifyShow,
+    validHex, clearCustomTheme, applyCustomTheme
   };
 })(window);

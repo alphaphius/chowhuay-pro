@@ -1,9 +1,9 @@
 /* ChowHuay Pro — Config */
 window.CONFIG = {
-  APP_VERSION: '1.2.0',
+  APP_VERSION: '1.3.0',
   // Bump when a deploy changes cacheable assets. App compares this against
   // localStorage and self-reloads once so stale PWAs pick up the new bundle.
-  BOOT_VERSION: 12,
+  BOOT_VERSION: 16,
   // ตั้งค่า URL ของ Google Apps Script Web App (จบด้วย /exec)
   // ตัวอย่าง: 'https://script.google.com/macros/s/AKfycb.../exec'
   GAS_URL: 'https://script.google.com/macros/s/AKfycbwhCyCvUC2RNWJN_wSITsPAPAJSz5jKSoqEJrWq_8YIpy4nPzl475lM8shbpFkSKfg6kA/exec',

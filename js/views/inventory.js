@@ -8,26 +8,39 @@
   let editingId = null;
   let pendingImg = null;   // dataURL to upload
   let removeImg = false;
+  let stockEditing = false;
+  let stockSaving = false;
+  const pendingStock = new Map(); // product id -> unsaved delta
 
   function render(container) {
     container.innerHTML = `
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+      <div class="inventory-page-head">
         <div>
           <h1 class="h2">จัดการสต็อกและต้นทุน</h1>
-          <p class="caption">เพิ่ม แก้ไข ลบสินค้า และบันทึกทุนรวม</p>
+          <p class="caption">${stockEditing ? 'เลือกปรับหลายรายการ แล้วบันทึกพร้อมกันครั้งเดียว' : 'เพิ่ม แก้ไข ลบสินค้า และบันทึกทุนรวม'}</p>
         </div>
-        <button class="btn btn-primary" id="inv-add" style="display:${mode === 'individual' ? 'inline-flex' : 'none'};">${UI.icon('add')} เพิ่มสินค้า</button>
+        <div class="inventory-head-actions">
+          <button class="btn btn-outline" id="inv-stock-mode" style="display:${mode === 'individual' && !stockEditing ? 'inline-flex' : 'none'};">${UI.icon('tune')} ปรับสต็อก</button>
+          <button class="btn btn-primary" id="inv-add" style="display:${mode === 'individual' && !stockEditing ? 'inline-flex' : 'none'};">${UI.icon('add')} เพิ่มสินค้า</button>
+        </div>
       </div>
       <div class="segmented mb">
-        <button class="${mode === 'individual' ? 'active' : ''}" data-mode="individual">รายชิ้น (สินค้า)</button>
-        <button class="${mode === 'bulk' ? 'active' : ''}" data-mode="bulk">เหมาจ่าย / ทุนรวม</button>
+        <button class="${mode === 'individual' ? 'active' : ''}" data-mode="individual" ${stockEditing ? 'disabled' : ''}>รายชิ้น (สินค้า)</button>
+        <button class="${mode === 'bulk' ? 'active' : ''}" data-mode="bulk" ${stockEditing ? 'disabled' : ''}>เหมาจ่าย / ทุนรวม</button>
       </div>
       <div id="inv-pane"></div>
     `;
     container.querySelectorAll('[data-mode]').forEach((b) => {
       b.addEventListener('click', () => { mode = b.dataset.mode; render(container); });
     });
-    container.querySelector('#inv-add').addEventListener('click', () => openProductForm(null));
+    const addBtn = container.querySelector('#inv-add');
+    const stockModeBtn = container.querySelector('#inv-stock-mode');
+    if (addBtn) addBtn.addEventListener('click', () => openProductForm(null));
+    if (stockModeBtn) stockModeBtn.addEventListener('click', () => {
+      stockEditing = true;
+      pendingStock.clear();
+      render(container);
+    });
     wire(container);
     renderPane(container);
   }
@@ -42,6 +55,7 @@
       });
       const cats = ['__all'].concat(Store.state.categories);
       pane.innerHTML = `
+        ${stockEditing ? `<div class="stock-edit-intro" role="status">${UI.icon('bolt')}<div><b>โหมดปรับสต็อกแบบเร็ว</b><span>ปุ่ม + / − จะยังไม่ส่งข้อมูล จนกด “บันทึกทั้งหมด”</span></div></div>` : ''}
         <div style="display:flex;gap:8px;margin-bottom:12px;">
           <div class="search-bar grow">
             ${UI.icon('search')}
@@ -61,6 +75,7 @@
           </div>
         ` : `<div class="empty-state"><span class="material-symbols-outlined" aria-hidden="true">inventory_2</span><p>ไม่พบสินค้า${list.length ? '' : ''}</p></div>`}
         </div>
+        ${stockEditing ? stockSaveBar() : ''}
       `;
       pane.querySelector('#inv-search').addEventListener('input', (e) => { q = e.target.value; renderPane(container); });
       pane.querySelectorAll('[data-icat]').forEach((b) => b.addEventListener('click', () => { cat = b.dataset.icat; renderPane(container); }));
@@ -108,9 +123,11 @@
 
   function productRow(p, i) {
     const stock = U.num(p.stock);
-    const low = stock <= U.num(p.minStock);
+    const delta = pendingStock.get(String(p.id)) || 0;
+    const next = stock + delta;
+    const low = next <= U.num(p.minStock);
     return `
-      <div class="list-row ${i % 2 ? 'zebra-even' : 'zebra-odd'}" style="flex-wrap:wrap;">
+      <div class="list-row inventory-product-row ${stockEditing ? 'stock-editing' : ''} ${stockEditing && delta ? 'has-stock-change' : ''} ${i % 2 ? 'zebra-even' : 'zebra-odd'}">
         <div style="flex:1;min-width:200px;display:flex;gap:12px;align-items:center;">
           <div style="width:48px;height:48px;border-radius:10px;background:var(--surface-variant);display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0;">
             ${p.imgId ? `<img loading="lazy" src="${U.imgUrl(p.imgId)}" alt="" style="width:100%;height:100%;object-fit:contain;mix-blend-mode:multiply;padding:4px;">` : UI.icon('inventory_2', 'text-muted')}
@@ -120,17 +137,32 @@
             <div class="caption">${p.barcode ? U.esc(p.barcode) : 'ไม่มีบาร์โค้ด'} · ${U.esc(p.category || 'ไม่จัดหมวด')} · ${U.esc(p.unit || 'ชิ้น')}</div>
           </div>
         </div>
-        <div style="display:flex;align-items:center;gap:6px;">
+        <div class="inventory-stock-cell">
+          ${stockEditing ? `
           <div class="stepper">
-            <button data-adj="-1" data-id="${U.esc(p.id)}">${UI.icon('remove')}</button>
-            <span style="min-width:36px;color:${low ? 'var(--error)' : 'inherit'};font-weight:700;">${U.fmtInt(stock)}</span>
-            <button data-adj="1" data-id="${U.esc(p.id)}">${UI.icon('add')}</button>
+            <button data-stock-delta="-1" data-id="${U.esc(p.id)}" aria-label="ลดสต็อก ${U.esc(p.name)}" ${next <= 0 ? 'disabled' : ''}>${UI.icon('remove')}</button>
+            <span style="min-width:36px;color:${low ? 'var(--error)' : 'inherit'};font-weight:700;">${U.fmtInt(next)}</span>
+            <button data-stock-delta="1" data-id="${U.esc(p.id)}" aria-label="เพิ่มสต็อก ${U.esc(p.name)}">${UI.icon('add')}</button>
           </div>
+          ${delta ? `<span class="stock-delta ${delta > 0 ? 'positive' : 'negative'}">${delta > 0 ? '+' : ''}${U.fmtInt(delta)}</span>` : '<span class="caption">ยังไม่เปลี่ยน</span>'}
+          ` : `<span class="inventory-stock-value ${low ? 'text-error' : ''}">${U.fmtInt(stock)} <small>${U.esc(p.unit || 'ชิ้น')}</small></span>`}
         </div>
         <div class="caption" style="text-align:right;min-width:70px;">ต้นทุน <b class="text-primary">${U.fmtMoney(p.cost)}</b><br>ขาย <b>${U.fmtMoney(p.sell)}</b></div>
-        <div style="display:flex;gap:4px;">
+        <div style="display:${stockEditing ? 'none' : 'flex'};gap:4px;">
           <button class="btn-icon" data-edit="${U.esc(p.id)}" aria-label="แก้ไข ${U.esc(p.name)}">${UI.icon('edit')}</button>
           <button class="btn-icon" data-del="${U.esc(p.id)}" aria-label="ลบ ${U.esc(p.name)}">${UI.icon('delete', 'text-error')}</button>
+        </div>
+      </div>`;
+  }
+
+  function stockSaveBar() {
+    const count = pendingStock.size;
+    return `
+      <div class="stock-save-bar" role="region" aria-label="บันทึกการปรับสต็อก">
+        <div><b>${count ? 'แก้แล้ว ' + count + ' รายการ' : 'ยังไม่มีรายการเปลี่ยนแปลง'}</b><span>ตรวจสอบตัวเลขก่อนบันทึกลง Google Sheets</span></div>
+        <div class="stock-save-actions">
+          <button class="btn btn-ghost" type="button" data-stock-cancel ${stockSaving ? 'disabled' : ''}>ยกเลิก</button>
+          <button class="btn btn-secondary" type="button" data-stock-save ${!count || stockSaving ? 'disabled' : ''}>${stockSaving ? UI.icon('progress_activity', 'spin') + ' กำลังบันทึก...' : UI.icon('save') + ' บันทึกทั้งหมด'}</button>
         </div>
       </div>`;
   }
@@ -144,30 +176,66 @@
       if (edit) { openProductForm(edit.dataset.edit); return; }
       const del = e.target.closest('[data-del]');
       if (del) { deleteProduct(del.dataset.del); return; }
-      const adj = e.target.closest('[data-adj]');
-      if (adj) {
-        const id = adj.dataset.id, delta = parseInt(adj.dataset.adj, 10);
-        if (adj.disabled) return;
-        adj.disabled = true;
-        const icon = adj.querySelector('.material-symbols-outlined');
-        if (icon) icon.classList.add('spin');
-        try {
-          await Api.product.adjust(id, delta);
-          await Store.refresh();
-          render(container);
-          UI.toast(delta > 0 ? 'เพิ่มสต็อกแล้ว' : 'ปรับสต็อกแล้ว');
-        } catch (err) {
-          adj.disabled = false;
-          if (icon) icon.classList.remove('spin');
-          UI.toast(err.message, 'error');
-        }
+      const adjust = e.target.closest('[data-stock-delta]');
+      if (adjust) {
+        if (adjust.disabled || !stockEditing || stockSaving) return;
+        const id = String(adjust.dataset.id);
+        const delta = parseInt(adjust.dataset.stockDelta, 10);
+        const product = Store.productById(id);
+        const currentDelta = pendingStock.get(id) || 0;
+        if (!product || U.num(product.stock) + currentDelta + delta < 0) return;
+        const nextDelta = currentDelta + delta;
+        if (nextDelta) pendingStock.set(id, nextDelta);
+        else pendingStock.delete(id);
+        renderPane(container);
         return;
       }
+      if (e.target.closest('[data-stock-save]')) { saveStockChanges(container); return; }
+      if (e.target.closest('[data-stock-cancel]')) { cancelStockChanges(container); return; }
       const bedit = e.target.closest('[data-bedit]');
       if (bedit) { editBulk(bedit.dataset.bedit); return; }
       const bdel = e.target.closest('[data-bdel]');
       if (bdel) { deleteBulk(bdel.dataset.bdel); return; }
     });
+  }
+
+  async function saveStockChanges(container) {
+    if (stockSaving || !pendingStock.size) return;
+    stockSaving = true;
+    renderPane(container);
+    const adjustments = Array.from(pendingStock.entries()).map(([id, delta]) => ({ id, delta }));
+    try {
+      const result = await Api.product.adjustBatch(adjustments);
+      (result.stocks || []).forEach((item) => {
+        const product = Store.productById(item.id);
+        if (product) {
+          product.stock = item.stock;
+          if (item.updated) product.updated = item.updated;
+        }
+      });
+      Store.persist();
+      pendingStock.clear();
+      stockEditing = false;
+      stockSaving = false;
+      render(container);
+      UI.toast('บันทึกสต็อก ' + adjustments.length + ' รายการแล้ว');
+      App.checkAlerts();
+    } catch (err) {
+      stockSaving = false;
+      renderPane(container);
+      UI.toast((err && err.message) || 'บันทึกไม่สำเร็จ การแก้ไขยังอยู่ในหน้านี้', 'error');
+    }
+  }
+
+  function cancelStockChanges(container) {
+    const leave = () => {
+      pendingStock.clear();
+      stockEditing = false;
+      stockSaving = false;
+      render(container);
+    };
+    if (!pendingStock.size) { leave(); return; }
+    UI.confirmDialog('ยกเลิกการปรับสต็อก', 'ทิ้งการแก้ไข ' + pendingStock.size + ' รายการที่ยังไม่ได้บันทึก?', leave);
   }
   // ---- product form modal ----
   function openProductForm(id) {
@@ -423,17 +491,37 @@
       if (saveBtn.disabled) return;
       saveBtn.disabled = true;
       saveBtn.innerHTML = UI.icon('progress_activity', 'spin') + ' กำลังเพิ่ม...';
+      const current = Store.productById(p.id);
+      const previousStock = current ? U.num(current.stock) : U.num(p.stock);
+      if (current) {
+        current.stock = previousStock + n;
+        current.updated = new Date().toISOString();
+        Store.persist();
+      }
+      UI.closeModal();
+      UI.toast('ปรับจำนวนบนหน้าจอแล้ว กำลังบันทึกลง Google Sheets...');
+      render(document.getElementById('view-inventory'));
+      ViewDashboard.render(document.getElementById('view-dashboard'));
       try {
-        await Api.product.adjust(p.id, n);
-        await Store.refresh();
-        UI.closeModal();
+        const result = await Api.product.adjustBatch([{ id: p.id, delta: n }]);
+        const saved = result.stocks && result.stocks[0];
+        if (current && saved) {
+          current.stock = saved.stock;
+          current.updated = saved.updated || new Date().toISOString();
+          Store.persist();
+        }
         UI.toast('เพิ่มสต็อกแล้ว');
         render(document.getElementById('view-inventory'));
-        render(document.getElementById('view-dashboard'));
+        ViewDashboard.render(document.getElementById('view-dashboard'));
+        App.checkAlerts();
       } catch (err) {
-        saveBtn.disabled = false;
-        saveBtn.innerHTML = UI.icon('add') + ' เพิ่มสต็อก';
-        UI.toast(err.message, 'error');
+        if (current) {
+          current.stock = previousStock;
+          Store.persist();
+        }
+        render(document.getElementById('view-inventory'));
+        ViewDashboard.render(document.getElementById('view-dashboard'));
+        UI.toast(((err && err.message) || 'บันทึกไม่สำเร็จ') + ' คืนจำนวนเดิมแล้ว กรุณาลองอีกครั้ง', 'error');
       }
     });
     UI.openModal({ title: 'เติมสต็อก', body, foot: [saveBtn] });

@@ -15,7 +15,7 @@
  * (avoids CORS preflight). JSON payload in the body, action in ?action=
  */
 
-var SCRIPT_VER = '1.2.0';
+var SCRIPT_VER = '1.3.0';
 var SESSION_TTL_SECONDS = 21600;
 var MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
@@ -91,6 +91,7 @@ function handle(action, params, body) {
     case 'product:update': return updateProduct(body.product || {});
     case 'product:delete': return deleteProduct((body.product && body.product.id) || body.id);
     case 'product:adjust': return adjustStock(body.id, body.delta);
+    case 'product:adjustBatch': return adjustStocks(body.adjustments || []);
     case 'sale:create': return createSale(body.sale || {});
     case 'sale:delete': return deleteSale(body.id);
     case 'purchase:create': return createPurchase(body.purchase || {});
@@ -173,7 +174,7 @@ function safeSettings(cfg) {
 function isMutationAction(action) {
   return [
     'init', 'test:reset', 'product:create', 'product:update', 'product:delete',
-    'product:adjust', 'sale:create', 'sale:delete', 'purchase:create',
+    'product:adjust', 'product:adjustBatch', 'sale:create', 'sale:delete', 'purchase:create',
     'purchase:update', 'purchase:delete', 'category:create', 'category:delete',
     'settings:set', 'image:delete', 'image:repairShare'
   ].indexOf(action) >= 0;
@@ -458,6 +459,47 @@ function adjustStock(id, delta) {
   return { ok: true, stock: next };
 }
 
+function adjustStocks(adjustments) {
+  if (!Array.isArray(adjustments) || !adjustments.length) throw new Error('ไม่มีรายการปรับสต็อก');
+  if (adjustments.length > 500) throw new Error('ปรับสต็อกได้สูงสุด 500 รายการต่อครั้ง');
+
+  var sh = sheet(SHEET_PRODUCTS, PRODUCT_HEADERS);
+  var values = sh.getDataRange().getValues();
+  var byId = {};
+  for (var r = 1; r < values.length; r++) byId[String(values[r][0])] = r;
+
+  var seen = {};
+  var changes = [];
+  adjustments.forEach(function (item) {
+    var id = String(item && item.id || '');
+    var delta = num(item && item.delta);
+    if (!id || seen[id]) throw new Error('รายการปรับสต็อกซ้ำหรือไม่ถูกต้อง');
+    if (!isFinite(delta) || delta === 0) throw new Error('จำนวนปรับสต็อกไม่ถูกต้อง');
+    if (byId[id] === undefined) throw new Error('ไม่พบสินค้า: ' + id);
+    var index = byId[id];
+    var current = num(values[index][7]);
+    var next = current + delta;
+    if (next < 0) throw new Error('สต็อกไม่พอสำหรับ ' + String(values[index][2] || id) + ' (' + current + ' ชิ้น)');
+    seen[id] = true;
+    changes.push({ id: id, index: index, stock: next });
+  });
+
+  // Validate every item before the first write, then update both columns in two
+  // batched writes. This replaces N API calls + N full refreshes in the old UI.
+  var updated = nowIso();
+  changes.forEach(function (change) {
+    values[change.index][7] = change.stock;
+    values[change.index][11] = updated;
+  });
+  var dataRows = values.slice(1);
+  sh.getRange(2, 8, dataRows.length, 1).setValues(dataRows.map(function (row) { return [row[7]]; }));
+  sh.getRange(2, 12, dataRows.length, 1).setValues(dataRows.map(function (row) { return [row[11]]; }));
+  return {
+    ok: true,
+    stocks: changes.map(function (change) { return { id: change.id, stock: change.stock, updated: updated }; })
+  };
+}
+
 function validateProduct(p) {
   if (isBlank(p.name)) throw new Error('ต้องระบุชื่อสินค้า');
   ['cost', 'sell', 'stock', 'minStock'].forEach(function (key) {
@@ -651,13 +693,16 @@ function getSettings() {
 }
 
 function setPublicSetting(key, value) {
-  var allowed = ['storeName', 'theme', 'dark', 'passcode'];
+  var allowed = ['storeName', 'theme', 'themeColor', 'dark', 'passcode'];
   if (allowed.indexOf(String(key)) < 0) throw appError('INVALID_SETTING', 'ไม่อนุญาตให้แก้ไขการตั้งค่านี้');
   if (key === 'passcode' && !/^\d{4}$/.test(String(value || ''))) {
     throw new Error('รหัสผ่านต้องเป็นตัวเลข 4 หลัก');
   }
   if (key === 'storeName' && (isBlank(value) || String(value).length > 100)) {
     throw new Error('ชื่อร้านต้องมี 1-100 ตัวอักษร');
+  }
+  if (key === 'themeColor' && !/^#[0-9a-f]{6}$/i.test(String(value || ''))) {
+    throw new Error('รหัสสีธีมไม่ถูกต้อง');
   }
   if (key === 'passcode') {
     storePinHash(String(value), TEST_MODE ? 'TEST_PIN_HASH' : 'PIN_HASH');

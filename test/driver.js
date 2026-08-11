@@ -27,6 +27,13 @@
     };
     window.Notification.permission = 'granted';
     window.Notification.requestPermission = () => Promise.resolve('granted');
+    if (window.ServiceWorkerRegistration && window.ServiceWorkerRegistration.prototype) {
+      window.ServiceWorkerRegistration.prototype.showNotification = function (title, opts) {
+        window.__notifyCount++;
+        window.__lastNotify = { title: String(title), body: (opts && opts.body) || '' };
+        return Promise.resolve();
+      };
+    }
   } catch (e) {}
 
   async function until(fn, ms, step) {
@@ -138,6 +145,11 @@
       await wait(300);
     } else bad('dark toggle missing');
 
+    setVal('#s-custom-hex', '#0f766e');
+    document.getElementById('s-apply-custom').click();
+    await wait(400);
+    ok('custom theme applied: ' + (root.dataset.theme === 'custom' && !!root.style.getPropertyValue('--primary')));
+
     const store = document.getElementById('s-store');
     if (store) {
       store.value = 'ร้านทดสอบ';
@@ -183,6 +195,7 @@
     await wait(400);
     const cartItems = document.querySelectorAll('#view-pos .cart-item').length;
     ok('cart has item: ' + (cartItems >= 1));
+    ok('selected card has cart badge + stock row: ' + (!!document.querySelector('#view-pos [data-add="' + pMain.id + '"] .cart-qty-badge') && !!document.querySelector('#view-pos [data-add="' + pMain.id + '"] .product-stock')));
     document.querySelector('#view-pos [data-checkout]').click();
     await wait(400);
     const discountSet = setVal('#co-discount', '5');
@@ -214,9 +227,10 @@
       setVal('#r-qty', '30');
       const rbtn = document.querySelector('.modal-sheet .modal-foot .btn');
       if (rbtn) rbtn.click();
-      await until(() => byBarcode(8851888041847) && Number(byBarcode(8851888041847).stock) >= 30, 30000);
+      const restocked = await until(() => byBarcode(8851888041847) && Number(byBarcode(8851888041847).stock) >= 30, 30000);
       const stk = byBarcode(8851888041847);
-      ok('restock applied stock=' + (stk ? stk.stock : 'n/a'));
+      if (restocked) ok('restock applied stock=' + (stk ? stk.stock : 'n/a'));
+      else bad('restock did not apply stock=' + (stk ? stk.stock : 'n/a'), document.querySelector('.toast') && document.querySelector('.toast').textContent);
     } else bad('restock button missing (low stock?)');
 
     // --- inventory: add product via UI ---
@@ -255,6 +269,22 @@
     document.querySelector('.modal-sheet .modal-foot .btn').click();
     await until(() => byBarcode(newBarcode) && byBarcode(newBarcode).imgId, 30000);
     ok('image uploaded (imgId set): ' + (!!byBarcode(newBarcode).imgId));
+
+    // --- inventory: adjust multiple items locally, save with one API request ---
+    const batchStockBefore = Number(byBarcode(newBarcode).stock);
+    document.querySelector('#view-inventory #inv-stock-mode').click();
+    await wait(300);
+    const plus = document.querySelector('#view-inventory [data-stock-delta="1"][data-id="' + byBarcode(newBarcode).id + '"]');
+    if (plus) {
+      plus.click();
+      await wait(150);
+      document.querySelector('#view-inventory [data-stock-delta="1"][data-id="' + byBarcode(newBarcode).id + '"]').click();
+      await wait(150);
+      ok('stock edits stay pending: ' + (Number(byBarcode(newBarcode).stock) === batchStockBefore && !!document.querySelector('#view-inventory .stock-delta.positive')));
+      document.querySelector('#view-inventory [data-stock-save]').click();
+      const batchSaved = await until(() => Number(byBarcode(newBarcode).stock) === batchStockBefore + 2, 30000);
+      ok('batch stock saved once: ' + batchSaved);
+    } else bad('batch stock controls missing');
 
     // --- duplicate barcode guard ---
     const dupErr = await window.Api.product.create({ barcode: 8851888041847, name: 'สินค้าบาร์โค้ดซ้ำ' }).then(
@@ -332,14 +362,22 @@
     // --- low-stock notification fires ---
     const pNotif = byBarcode(8851888041847);
     try { localStorage.removeItem(window.CONFIG.STORAGE_KEY + '_alerted'); } catch (e) {}
-    await window.Api.product.adjust(pNotif.id, -(pNotif.stock - 3));
-    await window.Store.refresh();
-    await wait(300);
+    const toLowStock = 3 - Number(pNotif.stock || 0);
+    if (toLowStock) {
+      await window.Api.product.adjust(pNotif.id, toLowStock);
+      await window.Store.refresh();
+    }
+    await wait(2200);
     const beforeNotify = window.__notifyCount;
     window.App.checkAlerts();
     await wait(800);
     const fired = window.__notifyCount > beforeNotify;
     ok('notification fired: ' + fired + ' title=' + ((window.__lastNotify && window.__lastNotify.title) || 'none'));
+    await wait(2200);
+    const beforeRepeat = window.__notifyCount;
+    window.App.checkAlerts();
+    await wait(800);
+    ok('notification repeats on next check: ' + (window.__notifyCount > beforeRepeat));
 
     if (errs.length) bad('JS ERRORS: ' + errs.join(' | '));
     else ok('no JS errors');

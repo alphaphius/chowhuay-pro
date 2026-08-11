@@ -20,6 +20,7 @@
 
   let unlocked = false;
   let pin = '';
+  let lastLowStockAlertAt = 0;
   const MAX_PIN = 4;
 
   const App = {
@@ -116,6 +117,8 @@
     const root = document.documentElement;
     root.dataset.theme = t.theme;
     root.dataset.mode = t.mode;
+    if (t.theme === 'custom' && U.validHex(t.customColor)) U.applyCustomTheme(root, t.customColor, t.mode);
+    else U.clearCustomTheme(root);
   }
 
   function refreshSilent() {
@@ -151,29 +154,40 @@
     el.textContent = labels[state] || '';
   }
 
-  // ---- low-stock browser notifications (once per product per day) ----
-  function checkLowStockAlerts() {
+  // ---- low-stock browser notifications (every completed app check/sync) ----
+  async function checkLowStockAlerts() {
     if (!U.notifySupported() || U.notifyPermission() !== 'granted') return;
     const setup = Api.getSetup();
     if (!setup.notify) return;
-    const low = Store.lowStock().concat(Store.outOfStock());
+    // lowStock and outOfStock can overlap; keep one authoritative entry per product.
+    const low = Array.from(new Map(
+      Store.lowStock().concat(Store.outOfStock()).map((p) => [String(p.id), p])
+    ).values());
     if (!low.length) return;
-    const key = CONFIG.STORAGE_KEY + '_alerted';
-    let alerted = {};
-    try { alerted = JSON.parse(localStorage.getItem(key) || '{}'); } catch (e) {}
-    const today = U.todayStr();
+
+    // Store.refresh and the view can finish together. Collapse only that accidental
+    // double-fire; a later open or sync always alerts again as requested.
+    const now = Date.now();
+    if (now - lastLowStockAlertAt < 2000) return;
+    lastLowStockAlertAt = now;
+
     const storeName = (Store.state.settings && Store.state.settings.storeName) || 'ChowHuay Pro';
-    low.forEach((p) => {
-      if (alerted[p.id] === today) return;
-      alerted[p.id] = today;
-      const out = U.num(p.stock) <= 0;
-      U.notifyShow(storeName + ': สินค้า' + (out ? 'หมด' : 'ใกล้หมด'), {
-        body: p.name + ' (เหลือ ' + U.fmtInt(p.stock) + ' ' + (p.unit || 'ชิ้น') + ')',
-        icon: 'icons/icon-192.png',
-        tag: 'lowstock-' + p.id
-      });
+    const outCount = low.filter((p) => U.num(p.stock) <= 0).length;
+    const preview = low.slice(0, 3).map((p) =>
+      p.name + ' เหลือ ' + U.fmtInt(p.stock) + ' ' + (p.unit || 'ชิ้น')
+    ).join(' · ');
+    const more = low.length > 3 ? ' · และอีก ' + (low.length - 3) + ' รายการ' : '';
+    const title = storeName + ': สต็อกต่ำ ' + low.length + ' รายการ';
+    const url = location.origin + location.pathname + '#/inventory';
+    await U.notifyShow(title, {
+      body: preview + more + (outCount ? ' (หมด ' + outCount + ' รายการ)' : ''),
+      icon: new URL('icons/icon-192.png', location.href).href,
+      badge: new URL('icons/icon-192.png', location.href).href,
+      tag: 'chowhuay-low-stock',
+      renotify: true,
+      silent: false,
+      data: { url: url }
     });
-    try { localStorage.setItem(key, JSON.stringify(alerted)); } catch (e) {}
   }
 
   function route() {
@@ -348,6 +362,9 @@
   function registerSW() {
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js').catch((err) => console.warn('SW fail', err));
+      navigator.serviceWorker.addEventListener('message', (e) => {
+        if (e.data && e.data.type === 'navigate' && e.data.hash) location.hash = e.data.hash;
+      });
     }
   }
 

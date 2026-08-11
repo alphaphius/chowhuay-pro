@@ -3,7 +3,7 @@
  * Data (Apps Script POST): never cached by SW (app manages its own cache).
  * Images (Drive thumbs) & fonts: cache-first with background refresh.
  */
-const CACHE = 'chowhuay-v12';
+const CACHE = 'chowhuay-v16';
 const CORE = [
   './',
   './index.html',
@@ -82,5 +82,22 @@ self.addEventListener('fetch', (e) => {
         return res;
       })
     )
+  );
+});
+
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  const targetUrl = (e.notification.data && e.notification.data.url) || (self.registration.scope + '#/inventory');
+  e.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windows) => {
+      const targetOrigin = new URL(targetUrl).origin;
+      for (const client of windows) {
+        if (new URL(client.url).origin === targetOrigin) {
+          client.postMessage({ type: 'navigate', hash: '#/inventory' });
+          return client.focus();
+        }
+      }
+      return self.clients.openWindow ? self.clients.openWindow(targetUrl) : undefined;
+    })
   );
 });
