@@ -38,6 +38,8 @@ Web app จัดการสต็อกสินค้า ขายหน้�
 5. กด **ติดตั้งใช้งาน → ติดตั้งใหม่** → เลือก *Execute as: Me* → เลือก *Who has access: Anyone (anonymous users)* → อนุญาตสิทธิ์
 6. คัดลอก URL `/exec` (แบบ `https://script.google.com/macros/s/xxxxx/exec`)
 
+Template for copy : https://docs.google.com/spreadsheets/d/1se8fTv5T27TS1r2kmex_U4WXun4T7aSe6fKHn0WoXtw/copy
+
 ### 2. เชื่อม URL กับแอป
 1. เปิดแอป (GitHub Pages) → ไปเมนู **ตั้งค่า**
 2. วาง URL `/exec` ในช่อง **Apps Script URL** → กด **ทดสอบการเชื่อมต่อ**
